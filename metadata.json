@@ -1,0 +1,8 @@
+{
+  "name": "Bike One",
+  "description": "Sistema completo de gestão para oficina e loja de bicicletas em Angola, com ordens de serviço, stock, relatórios diários e controlo de lucros.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
