@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Service, Product, WorkOrder, DirectSale, DirectSaleItem, WorkOrderStatus, Customer, Expense, BalanceAdjustment, SalaryAdvance, Employee } from './types';
 import { 
   DEFAULT_SERVICES, 
@@ -8,13 +8,17 @@ import {
   DEFAULT_EXPENSES
 } from './data';
 
+// Supabase Cloud Sync imports
+import { saveToSupabase, loadAllFromSupabase, saveAllToSupabase, checkSupabaseConnection } from './lib/supabase';
+
+
 // Component imports
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import WorkOrders from './components/WorkOrders';
 import StockAndServices from './components/StockAndServices';
-import Reports from './components/Reports';
+import SettingsView from './components/Settings';
 import Pessoas from './components/Pessoas';
 import Sales from './components/Sales';
 import QuickSaleModal from './components/QuickSaleModal';
@@ -35,9 +39,13 @@ const STORAGE_KEYS = {
 export default function App() {
   // 1. Initialize State lazily from LocalStorage (Avoiding redundant re-runs)
   const [user, setUser] = useState<User | null>(() => {
-    const defaultUser = { username: 'Bike One', role: 'Administrador' as const };
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(defaultUser));
-    return defaultUser;
+    const stored = localStorage.getItem(STORAGE_KEYS.USER);
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  const [baseBalance, setBaseBalance] = useState<number>(() => {
+    const stored = localStorage.getItem('bikeone_base_balance_v1');
+    return stored ? parseFloat(stored) : 0;
   });
 
   const [services, setServices] = useState<Service[]>(() => {
@@ -58,26 +66,17 @@ export default function App() {
 
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(() => {
     const stored = localStorage.getItem(STORAGE_KEYS.WORK_ORDERS);
-    if (stored) return JSON.parse(stored);
-    // Initial Seed
-    localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(DEFAULT_WORK_ORDERS));
-    return DEFAULT_WORK_ORDERS;
+    return stored ? JSON.parse(stored) : [];
   });
 
   const [directSales, setDirectSales] = useState<DirectSale[]>(() => {
     const stored = localStorage.getItem(STORAGE_KEYS.DIRECT_SALES);
-    if (stored) return JSON.parse(stored);
-    // Initial Seed
-    localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify(DEFAULT_DIRECT_SALES));
-    return DEFAULT_DIRECT_SALES;
+    return stored ? JSON.parse(stored) : [];
   });
 
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const stored = localStorage.getItem(STORAGE_KEYS.EXPENSES);
-    if (stored) return JSON.parse(stored);
-    // Initial Seed
-    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(DEFAULT_EXPENSES));
-    return DEFAULT_EXPENSES;
+    return stored ? JSON.parse(stored) : [];
   });
 
   const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>(() => {
@@ -118,6 +117,262 @@ export default function App() {
   });
 
   const [activeView, setActiveView] = useState<'dashboard' | 'os' | 'stock' | 'relatorios' | 'clientes' | 'vendas'>('dashboard');
+  const [isLoadedFromSupabase, setIsLoadedFromSupabase] = useState(false);
+
+  // Connection list keys to sync
+  const SYNC_KEYS = [
+    'bikeone_base_balance_v1',
+    STORAGE_KEYS.SERVICES,
+    STORAGE_KEYS.PRODUCTS,
+    STORAGE_KEYS.WORK_ORDERS,
+    STORAGE_KEYS.DIRECT_SALES,
+    STORAGE_KEYS.EXPENSES,
+    STORAGE_KEYS.BALANCE_ADJUSTMENTS,
+    STORAGE_KEYS.SALARY_ADVANCES,
+    STORAGE_KEYS.EMPLOYEES,
+  ];
+
+  const handlePullFromSupabase = async (): Promise<boolean> => {
+    try {
+      const conn = await checkSupabaseConnection();
+      if (conn.status !== 'connected') return false;
+
+      const data = await loadAllFromSupabase(SYNC_KEYS);
+      
+      if (data['bikeone_base_balance_v1'] !== undefined && data['bikeone_base_balance_v1'] !== null) {
+        setBaseBalance(parseFloat(data['bikeone_base_balance_v1']));
+        localStorage.setItem('bikeone_base_balance_v1', data['bikeone_base_balance_v1'].toString());
+      }
+      if (data[STORAGE_KEYS.SERVICES] !== undefined && data[STORAGE_KEYS.SERVICES] !== null) {
+        setServices(data[STORAGE_KEYS.SERVICES]);
+        localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(data[STORAGE_KEYS.SERVICES]));
+      }
+      if (data[STORAGE_KEYS.PRODUCTS] !== undefined && data[STORAGE_KEYS.PRODUCTS] !== null) {
+        setProducts(data[STORAGE_KEYS.PRODUCTS]);
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data[STORAGE_KEYS.PRODUCTS]));
+      }
+      if (data[STORAGE_KEYS.WORK_ORDERS] !== undefined && data[STORAGE_KEYS.WORK_ORDERS] !== null) {
+        setWorkOrders(data[STORAGE_KEYS.WORK_ORDERS]);
+        localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(data[STORAGE_KEYS.WORK_ORDERS]));
+      }
+      if (data[STORAGE_KEYS.DIRECT_SALES] !== undefined && data[STORAGE_KEYS.DIRECT_SALES] !== null) {
+        setDirectSales(data[STORAGE_KEYS.DIRECT_SALES]);
+        localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify(data[STORAGE_KEYS.DIRECT_SALES]));
+      }
+      if (data[STORAGE_KEYS.EXPENSES] !== undefined && data[STORAGE_KEYS.EXPENSES] !== null) {
+        setExpenses(data[STORAGE_KEYS.EXPENSES]);
+        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(data[STORAGE_KEYS.EXPENSES]));
+      }
+      if (data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== undefined && data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== null) {
+        setBalanceAdjustments(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]);
+        localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]));
+      }
+      if (data[STORAGE_KEYS.SALARY_ADVANCES] !== undefined && data[STORAGE_KEYS.SALARY_ADVANCES] !== null) {
+        setSalaryAdvances(data[STORAGE_KEYS.SALARY_ADVANCES]);
+        localStorage.setItem(STORAGE_KEYS.SALARY_ADVANCES, JSON.stringify(data[STORAGE_KEYS.SALARY_ADVANCES]));
+      }
+      if (data[STORAGE_KEYS.EMPLOYEES] !== undefined && data[STORAGE_KEYS.EMPLOYEES] !== null) {
+        setEmployees(data[STORAGE_KEYS.EMPLOYEES]);
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(data[STORAGE_KEYS.EMPLOYEES]));
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Error pulling from Supabase:', err);
+      return false;
+    }
+  };
+
+  const handlePushToSupabase = async (): Promise<boolean> => {
+    try {
+      const conn = await checkSupabaseConnection();
+      if (conn.status !== 'connected') return false;
+
+      const payload = {
+        'bikeone_base_balance_v1': baseBalance,
+        [STORAGE_KEYS.SERVICES]: services,
+        [STORAGE_KEYS.PRODUCTS]: products,
+        [STORAGE_KEYS.WORK_ORDERS]: workOrders,
+        [STORAGE_KEYS.DIRECT_SALES]: directSales,
+        [STORAGE_KEYS.EXPENSES]: expenses,
+        [STORAGE_KEYS.BALANCE_ADJUSTMENTS]: balanceAdjustments,
+        [STORAGE_KEYS.SALARY_ADVANCES]: salaryAdvances,
+        [STORAGE_KEYS.EMPLOYEES]: employees,
+      };
+
+      const results = await saveAllToSupabase(payload);
+      return Object.values(results).every(v => v);
+    } catch (err) {
+      console.error('Error pushing to Supabase:', err);
+      return false;
+    }
+  };
+
+  // 1. Load from Supabase on start
+  useEffect(() => {
+    const initSync = async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        const data = await loadAllFromSupabase(SYNC_KEYS);
+        const hasData = Object.keys(data).length > 0;
+        
+        if (hasData) {
+          if (data['bikeone_base_balance_v1'] !== undefined && data['bikeone_base_balance_v1'] !== null) {
+            setBaseBalance(parseFloat(data['bikeone_base_balance_v1']));
+          }
+          if (data[STORAGE_KEYS.SERVICES] !== undefined && data[STORAGE_KEYS.SERVICES] !== null) {
+            setServices(data[STORAGE_KEYS.SERVICES]);
+          }
+          if (data[STORAGE_KEYS.PRODUCTS] !== undefined && data[STORAGE_KEYS.PRODUCTS] !== null) {
+            setProducts(data[STORAGE_KEYS.PRODUCTS]);
+          }
+          if (data[STORAGE_KEYS.WORK_ORDERS] !== undefined && data[STORAGE_KEYS.WORK_ORDERS] !== null) {
+            setWorkOrders(data[STORAGE_KEYS.WORK_ORDERS]);
+          }
+          if (data[STORAGE_KEYS.DIRECT_SALES] !== undefined && data[STORAGE_KEYS.DIRECT_SALES] !== null) {
+            setDirectSales(data[STORAGE_KEYS.DIRECT_SALES]);
+          }
+          if (data[STORAGE_KEYS.EXPENSES] !== undefined && data[STORAGE_KEYS.EXPENSES] !== null) {
+            setExpenses(data[STORAGE_KEYS.EXPENSES]);
+          }
+          if (data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== undefined && data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== null) {
+            setBalanceAdjustments(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]);
+          }
+          if (data[STORAGE_KEYS.SALARY_ADVANCES] !== undefined && data[STORAGE_KEYS.SALARY_ADVANCES] !== null) {
+            setSalaryAdvances(data[STORAGE_KEYS.SALARY_ADVANCES]);
+          }
+          if (data[STORAGE_KEYS.EMPLOYEES] !== undefined && data[STORAGE_KEYS.EMPLOYEES] !== null) {
+            setEmployees(data[STORAGE_KEYS.EMPLOYEES]);
+          }
+        } else {
+          await saveAllToSupabase({
+            'bikeone_base_balance_v1': baseBalance,
+            [STORAGE_KEYS.SERVICES]: services,
+            [STORAGE_KEYS.PRODUCTS]: products,
+            [STORAGE_KEYS.WORK_ORDERS]: workOrders,
+            [STORAGE_KEYS.DIRECT_SALES]: directSales,
+            [STORAGE_KEYS.EXPENSES]: expenses,
+            [STORAGE_KEYS.BALANCE_ADJUSTMENTS]: balanceAdjustments,
+            [STORAGE_KEYS.SALARY_ADVANCES]: salaryAdvances,
+            [STORAGE_KEYS.EMPLOYEES]: employees,
+          });
+        }
+      }
+      setIsLoadedFromSupabase(true);
+    };
+
+    initSync();
+  }, []);
+
+  // 2. Real-time changes synchronization
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase('bikeone_base_balance_v1', baseBalance);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [baseBalance, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.SERVICES, services);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [services, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.PRODUCTS, products);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [products, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.WORK_ORDERS, workOrders);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [workOrders, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.DIRECT_SALES, directSales);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [directSales, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.EXPENSES, expenses);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [expenses, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.BALANCE_ADJUSTMENTS, balanceAdjustments);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [balanceAdjustments, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.SALARY_ADVANCES, salaryAdvances);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [salaryAdvances, isLoadedFromSupabase]);
+
+  useEffect(() => {
+    if (!isLoadedFromSupabase) return;
+
+    const timer = setTimeout(async () => {
+      const conn = await checkSupabaseConnection();
+      if (conn.status === 'connected') {
+        saveToSupabase(STORAGE_KEYS.EMPLOYEES, employees);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [employees, isLoadedFromSupabase]);
+
   const [woInitialTab, setWoInitialTab] = useState<'list' | 'create'>('list');
   const [isQuickSaleOpen, setIsQuickSaleOpen] = useState(false);
 
@@ -475,6 +730,39 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(updated));
   };
 
+  const handleUpdateBaseBalance = (newBalance: number) => {
+    setBaseBalance(newBalance);
+    localStorage.setItem('bikeone_base_balance_v1', newBalance.toString());
+  };
+
+  const handleResetAllData = () => {
+    setBaseBalance(0);
+    localStorage.setItem('bikeone_base_balance_v1', '0');
+
+    setWorkOrders([]);
+    localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify([]));
+
+    setDirectSales([]);
+    localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify([]));
+
+    setExpenses([]);
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify([]));
+
+    setBalanceAdjustments([]);
+    localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify([]));
+
+    setSalaryAdvances([]);
+    localStorage.setItem(STORAGE_KEYS.SALARY_ADVANCES, JSON.stringify([]));
+  };
+
+  const handleResetBalanceOnly = () => {
+    setBaseBalance(0);
+    localStorage.setItem('bikeone_base_balance_v1', '0');
+
+    setBalanceAdjustments([]);
+    localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify([]));
+  };
+
   // -------------------------------------------------------------
   // NAVIGATION ROUTER
 
@@ -503,6 +791,7 @@ export default function App() {
           expenses={expenses}
           balanceAdjustments={balanceAdjustments}
           salaryAdvances={salaryAdvances}
+          baseBalance={baseBalance}
           onNavigate={(view) => {
             if (view === 'os') setWoInitialTab('list');
             setActiveView(view);
@@ -547,14 +836,14 @@ export default function App() {
         />
       )}
 
-      {activeView === 'relatorios' && (
-        <Reports
-          workOrders={workOrders}
-          directSales={directSales}
-          products={products}
-          expenses={expenses}
-          balanceAdjustments={balanceAdjustments}
-          onAddBalanceAdjustment={handleAddBalanceAdjustment}
+      {activeView === 'settings' && (
+        <SettingsView
+          baseBalance={baseBalance}
+          onUpdateBaseBalance={handleUpdateBaseBalance}
+          onResetAllData={handleResetAllData}
+          onResetBalanceOnly={handleResetBalanceOnly}
+          onPullFromSupabase={handlePullFromSupabase}
+          onPushToSupabase={handlePushToSupabase}
         />
       )}
 

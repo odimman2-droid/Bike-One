@@ -8,24 +8,17 @@ interface LoginProps {
   onLogin: (user: User) => void;
 }
 
-const PRESET_USERS: User[] = [
-  { username: 'Carlos Silva', role: 'Administrador' },
-  { username: 'Bruno Kiala', role: 'Mecânico' },
-  { username: 'Delfina Neto', role: 'Atendente' },
-];
-
 export default function Login({ onLogin }: LoginProps) {
-  const [selectedUser, setSelectedUser] = useState<User>(PRESET_USERS[0]);
-  const [pin, setPin] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simple mock PIN authentication (e.g., 1234 or empty for ease)
-    if (pin === '1234' || pin === '') {
-      onLogin(selectedUser);
+    if (username.trim() === 'Bike One' && password === 'bikeone2026') {
+      onLogin({ username: 'Bike One', role: 'Administrador' });
     } else {
-      setError('PIN incorreto! Utilize o PIN "1234" ou deixe em branco.');
+      setError('Nome de utilizador ou palavra-passe incorretos!');
     }
   };
 
@@ -61,54 +54,44 @@ export default function Login({ onLogin }: LoginProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* User Selection Grid */}
+          {/* Username Input */}
           <div>
-            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3">
-              Selecione o Utilizador
+            <label htmlFor="username" className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
+              Nome de Utilizador
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {PRESET_USERS.map((user) => (
-                <button
-                  key={user.username}
-                  type="button"
-                  onClick={() => {
-                    setSelectedUser(user);
-                    setError('');
-                  }}
-                  className={`flex flex-col items-center p-3 rounded-2xl border transition-all text-center cursor-pointer ${
-                    selectedUser.username === user.username
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-400 shadow-md shadow-amber-950/20'
-                      : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                  }`}
-                >
-                  <UserCheck className={`h-5 w-5 mb-1.5 ${selectedUser.username === user.username ? 'text-amber-500' : 'text-slate-500'}`} />
-                  <span className="text-[11px] font-bold leading-tight truncate w-full">{user.username}</span>
-                  <span className="text-[9px] text-slate-500 font-medium mt-0.5">{user.role}</span>
-                </button>
-              ))}
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
+                <UserCheck className="h-4 w-4" />
+              </span>
+              <input
+                id="username"
+                type="text"
+                placeholder="Ex: Bike One"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-slate-200 placeholder-slate-500 text-sm transition-all"
+                required
+              />
             </div>
           </div>
 
-          {/* PIN Input */}
+          {/* Password Input */}
           <div>
-            <div className="flex justify-between items-center mb-2">
-              <label htmlFor="pin" className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
-                Código PIN de Acesso
-              </label>
-              <span className="text-[10px] text-slate-500 italic">Dica: PIN padrão é 1234</span>
-            </div>
+            <label htmlFor="password" className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
+              Palavra-passe
+            </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
                 <Lock className="h-4 w-4" />
               </span>
               <input
-                id="pin"
+                id="password"
                 type="password"
-                placeholder="Insira o seu PIN (ou deixe em branco)"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-slate-200 placeholder-slate-500 text-sm tracking-widest transition-all"
-                maxLength={6}
+                placeholder="Insira a sua palavra-passe"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-slate-900/50 border border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 text-slate-200 placeholder-slate-500 text-sm transition-all"
+                required
               />
             </div>
           </div>

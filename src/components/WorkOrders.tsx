@@ -17,7 +17,9 @@ import {
   Trash2, 
   Edit,
   AlertCircle,
-  FileText
+  FileText,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface WorkOrdersProps {
@@ -41,6 +43,11 @@ export default function WorkOrders({
   onDeleteWorkOrder,
   initialTab = 'list',
 }: WorkOrdersProps) {
+  const shopName = localStorage.getItem('bikeone_shop_name') || 'BIKE ONE';
+  const shopPhone = localStorage.getItem('bikeone_shop_phone') || '+244 923 000 000';
+  const shopAddress = localStorage.getItem('bikeone_shop_address') || 'Avenida Pedro de Castro Van-Dúnem Loy, Luanda';
+  const shopNif = localStorage.getItem('bikeone_shop_nif') || '500123456';
+
   // Navigation & filtering states
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<WorkOrderStatus | 'Todos'>('Todos');
@@ -66,8 +73,12 @@ export default function WorkOrders({
   const [generalNotes, setGeneralNotes] = useState('');
   const [woStatus, setWOStatus] = useState<WorkOrderStatus>('Orçamento');
   const [paymentStatus, setPaymentStatus] = useState<'Pendente' | 'Pago 50%' | 'Pago Integral'>('Pendente');
-  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'Transferência'>('Dinheiro');
+  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'Transferência' | 'Dinheiro + Transferência'>('Dinheiro');
+  const [externalAccessories, setExternalAccessories] = useState('');
+  const [externalAccessoriesValue, setExternalAccessoriesValue] = useState<number>(0);
   const [formError, setFormError] = useState('');
+  const [showServicesList, setShowServicesList] = useState(false);
+  const [showPartsList, setShowPartsList] = useState(false);
 
   // Invoice view state
   const [viewingWO, setViewingWO] = useState<WorkOrder | null>(null);
@@ -75,7 +86,7 @@ export default function WorkOrders({
   // Computed values for current form (accounting for discounts)
   const laborTotal = selectedServices.reduce((sum, s) => sum + (s.laborValue - (s.discount || 0)), 0);
   const partsTotal = selectedParts.reduce((sum, p) => sum + ((p.unitPrice - (p.discount || 0)) * p.quantity), 0);
-  const formTotal = laborTotal + partsTotal;
+  const formTotal = laborTotal + partsTotal + (externalAccessoriesValue || 0);
 
   // Helpers for adding parts / services to draft
   const [tempServiceId, setTempServiceId] = useState('');
@@ -160,7 +171,11 @@ export default function WorkOrders({
     setWOStatus('Orçamento');
     setPaymentStatus('Pendente');
     setPaymentMethod('Dinheiro');
+    setExternalAccessories('');
+    setExternalAccessoriesValue(0);
     setFormError('');
+    setShowServicesList(false);
+    setShowPartsList(false);
     setActiveTab('create');
   };
 
@@ -175,7 +190,11 @@ export default function WorkOrders({
     setWOStatus(wo.status);
     setPaymentStatus(wo.paymentStatus || 'Pendente');
     setPaymentMethod(wo.paymentMethod || 'Dinheiro');
+    setExternalAccessories(wo.externalAccessories || '');
+    setExternalAccessoriesValue(wo.externalAccessoriesValue || 0);
     setFormError('');
+    setShowServicesList(false);
+    setShowPartsList(false);
     setActiveTab('create');
   };
 
@@ -190,12 +209,12 @@ export default function WorkOrders({
       setFormError('O contacto telefónico do cliente é obrigatório.');
       return;
     }
-    if (!bikeForm.brand.trim() || !bikeForm.model.trim()) {
-      setFormError('A marca e modelo da bicicleta são obrigatórios.');
+    if (!bikeForm.brand.trim()) {
+      setFormError('A marca da bicicleta é obrigatória.');
       return;
     }
     if (selectedServices.length === 0) {
-      setFormError('Adicione pelo menos um serviço de manutenção.');
+      setFormError('Selecione pelo menos um serviço a ser executado.');
       return;
     }
 
@@ -205,9 +224,16 @@ export default function WorkOrders({
                           : paymentStatus === 'Pago 50%' ? Math.round(formTotal * 0.5) 
                           : formTotal;
 
+    const cleanedBikeForm = {
+      brand: bikeForm.brand.trim(),
+      model: bikeForm.model?.trim() || 'Geral',
+      color: bikeForm.color?.trim() || 'N/D',
+      notes: bikeForm.notes?.trim() || '',
+    };
+
     const woPayload = {
       customer: customerForm,
-      bicycle: bikeForm,
+      bicycle: cleanedBikeForm,
       services: selectedServices,
       parts: selectedParts,
       laborTotal,
@@ -218,6 +244,8 @@ export default function WorkOrders({
       paymentStatus,
       amountPaid: finalAmountPaid,
       paymentMethod,
+      externalAccessories,
+      externalAccessoriesValue: externalAccessoriesValue || 0,
     };
 
     if (editingWOId) {
@@ -243,9 +271,7 @@ export default function WorkOrders({
   };
 
   const handleDeleteOS = (id: string) => {
-    if (confirm('Tem certeza de que deseja excluir esta Ordem de Serviço?')) {
-      onDeleteWorkOrder(id);
-    }
+    onDeleteWorkOrder(id);
   };
 
   // Quick state change helper
@@ -492,6 +518,20 @@ export default function WorkOrders({
                                   >
                                     Transf
                                   </button>
+                                  <button
+                                    onClick={() => {
+                                      onEditWorkOrder({
+                                        ...wo,
+                                        paymentStatus: 'Pago 50%',
+                                        paymentMethod: 'Dinheiro + Transferência',
+                                        amountPaid: Math.round(wo.total * 0.5),
+                                        updatedAt: new Date().toISOString()
+                                      });
+                                    }}
+                                    className="text-[8px] font-extrabold bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 border border-amber-500/20 px-1.5 py-0.5 rounded transition-all cursor-pointer"
+                                  >
+                                    Misto
+                                  </button>
                                 </div>
                               </div>
 
@@ -525,6 +565,20 @@ export default function WorkOrders({
                                     className="text-[8px] font-extrabold bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 px-1.5 py-0.5 rounded transition-all cursor-pointer"
                                   >
                                     Transf
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      onEditWorkOrder({
+                                        ...wo,
+                                        paymentStatus: 'Pago Integral',
+                                        paymentMethod: 'Dinheiro + Transferência',
+                                        amountPaid: wo.total,
+                                        updatedAt: new Date().toISOString()
+                                      });
+                                    }}
+                                    className="text-[8px] font-extrabold bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 px-1.5 py-0.5 rounded transition-all cursor-pointer"
+                                  >
+                                    Misto
                                   </button>
                                 </div>
                               </div>
@@ -561,6 +615,20 @@ export default function WorkOrders({
                                   className="text-[8px] font-extrabold bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 px-1.5 py-0.5 rounded transition-all cursor-pointer"
                                 >
                                   Transf
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    onEditWorkOrder({
+                                      ...wo,
+                                      paymentStatus: 'Pago Integral',
+                                      paymentMethod: 'Dinheiro + Transferência',
+                                      amountPaid: wo.total,
+                                      updatedAt: new Date().toISOString()
+                                    });
+                                  }}
+                                  className="text-[8px] font-extrabold bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/20 px-1.5 py-0.5 rounded transition-all cursor-pointer"
+                                >
+                                  Misto
                                 </button>
                               </div>
                             </div>
@@ -699,18 +767,17 @@ export default function WorkOrders({
             </div>
           )}
 
-          {/* Grid Layout: Client (Left) & Bike (Right) */}
+          {/* Core Simplified Fields: Customer and Bicycle Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Customer Section */}
+            {/* Customer Contact Information */}
             <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
               <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-850 pb-2.5">
                 <User className="h-4 w-4 text-amber-500" /> Dados do Cliente
               </h3>
               
-              <div className="grid grid-cols-1 gap-3.5">
+              <div className="space-y-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nome Completo *</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Nome do Cliente *</label>
                   <input
                     type="text"
                     placeholder="Ex: Manuel Gonçalves"
@@ -721,7 +788,7 @@ export default function WorkOrders({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contacto Telefónico *</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Contacto / Telefone *</label>
                   <input
                     type="tel"
                     placeholder="Ex: 923 456 789"
@@ -731,356 +798,429 @@ export default function WorkOrders({
                     required
                   />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email (Opcional)</label>
-                    <input
-                      type="email"
-                      placeholder="Ex: cliente@email.com"
-                      value={customerForm.email || ''}
-                      onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
-                      className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500/20"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Morada (Opcional)</label>
-                    <input
-                      type="text"
-                      placeholder="Ex: Talatona, Luanda"
-                      value={customerForm.address || ''}
-                      onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })}
-                      className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500/20"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Observações do Cliente (Opcional)</label>
-                  <textarea
-                    placeholder="Ex: Prefere contacto por WhatsApp, necessita de fatura com NIF..."
-                    value={customerForm.notes || ''}
-                    onChange={(e) => setCustomerForm({ ...customerForm, notes: e.target.value })}
-                    className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600 h-16 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500/20"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Bicycle Section */}
+            {/* Bicycle Brand and Problem Description */}
             <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
               <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-850 pb-2.5">
                 <Bike className="h-4 w-4 text-amber-500" /> Detalhes da Bicicleta
               </h3>
               
-              <div className="grid grid-cols-1 gap-3.5">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Marca *</label>
-                    <input
-                      type="text"
-                      placeholder="Ex: Specialized, Trek, Scott..."
-                      value={bikeForm.brand}
-                      onChange={(e) => setBikeForm({ ...bikeForm, brand: e.target.value })}
-                      className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600"
-                      required
-                    />
+              <div className="space-y-3.5">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Marca da Bicicleta *</label>
+                  <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    {['Specialized', 'Trek', 'Scott', 'Cannondale', 'Caloi', 'Giant', 'GT', 'Outra'].map((brand) => {
+                      const isSelected = brand === 'Outra'
+                        ? !['Specialized', 'Trek', 'Scott', 'Cannondale', 'Caloi', 'Giant', 'GT'].includes(bikeForm.brand) && bikeForm.brand !== ''
+                        : bikeForm.brand === brand;
+                      return (
+                        <button
+                          key={brand}
+                          type="button"
+                          onClick={() => {
+                            if (brand === 'Outra') {
+                              setBikeForm({ ...bikeForm, brand: '' });
+                            } else {
+                              setBikeForm({ ...bikeForm, brand });
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                              : 'bg-slate-900/50 text-slate-400 border-slate-800 hover:bg-slate-800/50'
+                          }`}
+                        >
+                          {brand}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Modelo *</label>
-                    <input
-                      type="text"
-                      placeholder="Ex: Chisel, Domane, Scale..."
-                      value={bikeForm.model}
-                      onChange={(e) => setBikeForm({ ...bikeForm, model: e.target.value })}
-                      className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cor / Pintura</label>
                   <input
                     type="text"
-                    placeholder="Ex: Preto Matte com Vermelho"
-                    value={bikeForm.color || ''}
-                    onChange={(e) => setBikeForm({ ...bikeForm, color: e.target.value })}
-                    className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100"
+                    placeholder="Introduza a marca da bicicleta..."
+                    value={bikeForm.brand}
+                    onChange={(e) => setBikeForm({ ...bikeForm, brand: e.target.value })}
+                    className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500/20"
+                    required
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Observações / Sintomas do Cliente</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Descrição de Problemas da Bicicleta</label>
                   <textarea
-                    placeholder="Ex: Barulho no pedaleiro ao subir, travar de trás esponjoso, riscos no aro..."
+                    placeholder="Ex: Barulho no pedaleiro ao subir, travar de trás esponjoso..."
                     value={bikeForm.notes || ''}
                     onChange={(e) => setBikeForm({ ...bikeForm, notes: e.target.value })}
-                    className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 h-16 resize-none placeholder-slate-600"
+                    className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 h-16 resize-none placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500/20"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Services & Labor Selection */}
+          {/* Multiple Choices: Services to Execute as Visual Toggle Buttons */}
           <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
-            <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-850 pb-2.5">
-              <Wrench className="h-4 w-4 text-amber-500" /> Mão de Obra (Serviços Catálogo)
-            </h3>
-            
-            <div className="flex flex-col sm:flex-row gap-3">
-              <select
-                value={tempServiceId}
-                onChange={(e) => setTempServiceId(e.target.value)}
-                className="bg-[#0a0b0d]/50 border border-slate-800 text-xs px-3 py-2 rounded-xl text-slate-200 flex-1 focus:outline-none"
-              >
-                <option value="">-- Selecione um serviço cadastrado --</option>
-                {services.filter((s) => s.status === 'Ativo').map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({formatKz(s.laborValue)})
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-850 pb-2.5">
+              <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Wrench className="h-4 w-4 text-amber-500" /> Serviço a ser Executado
+              </h3>
+              
               <button
                 type="button"
-                onClick={handleAddServiceToDraft}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-full shadow-md cursor-pointer uppercase tracking-wider"
+                onClick={() => setShowServicesList(!showServicesList)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/30 hover:bg-slate-850 text-[10px] font-black text-amber-400 uppercase tracking-wider rounded-xl transition-all cursor-pointer"
               >
-                Adicionar Serviço
+                {showServicesList ? 'Ocultar catálogo' : 'Escolher do catálogo'}
+                {showServicesList ? <ChevronUp className="h-3.5 w-3.5 text-slate-400" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />}
               </button>
             </div>
-
-            {selectedServices.length === 0 ? (
-              <p className="text-xs text-slate-500 italic py-2 text-center">Nenhum serviço de manutenção selecionado.</p>
-            ) : (
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {selectedServices.map((s, index) => (
-                  <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#0a0b0d]/40 border border-slate-800 rounded-xl gap-2.5 text-xs">
-                    <div>
-                      <span className="font-extrabold text-slate-300 block">{s.name}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">Valor Base: {formatKz(s.laborValue)}</span>
-                    </div>
-                    <div className="flex items-center justify-between sm:justify-end gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Desconto (Kz):</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={s.discount || ''}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            const updated = [...selectedServices];
-                            updated[index] = { ...updated[index], discount: Math.min(s.laborValue, val) };
-                            setSelectedServices(updated);
-                          }}
-                          className="w-20 bg-[#0a0b0d]/80 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-amber-500/45"
-                          min={0}
-                          max={s.laborValue}
-                        />
-                      </div>
-                      <span className="font-mono text-amber-500 font-bold shrink-0 min-w-[70px] text-right">
-                        {formatKz(s.laborValue - (s.discount || 0))}
-                      </span>
+            
+            {showServicesList ? (
+              services.filter(s => s.status === 'Ativo').length === 0 ? (
+                <p className="text-xs text-slate-500 italic py-2 text-center">Nenhum serviço ativo registado no catálogo.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {services.filter(s => s.status === 'Ativo').map((s) => {
+                    const isSelected = selectedServices.some(item => item.serviceId === s.id);
+                    return (
                       <button
+                        key={s.id}
                         type="button"
-                        onClick={() => handleRemoveServiceFromDraft(index)}
-                        className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-950/20 cursor-pointer border border-slate-800/80 bg-slate-900"
-                        title="Remover serviço"
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedServices(selectedServices.filter(item => item.serviceId !== s.id));
+                          } else {
+                            setSelectedServices([...selectedServices, { serviceId: s.id, name: s.name, laborValue: s.laborValue }]);
+                          }
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-md'
+                            : 'bg-slate-900/40 border-slate-850 text-slate-300 hover:bg-slate-850/50'
+                        }`}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <div className="flex justify-between items-start w-full gap-2">
+                          <span className="font-extrabold text-xs block truncate leading-tight">{s.name}</span>
+                          {isSelected && <CheckCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                        </div>
+                        <span className="text-[10px] font-bold font-mono text-slate-400">{formatKz(s.laborValue)}</span>
                       </button>
-                    </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <div>
+                {selectedServices.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-1">Nenhum serviço selecionado ainda. Clique em "Escolher do catálogo" acima.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedServices.map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl text-xs text-amber-400">
+                        <span className="font-extrabold">{s.name}</span>
+                        <span className="text-[10px] font-bold font-mono text-slate-400">({formatKz(s.laborValue)})</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedServices(selectedServices.filter(item => item.serviceId !== s.serviceId))}
+                          className="text-amber-500 hover:text-rose-400 font-extrabold px-1 text-sm leading-none cursor-pointer transition-colors"
+                          title="Remover serviço"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
 
-          {/* Parts & Materials Substitution Selection */}
+          {/* Multiple Choices: Active Products/Parts in Stock as Visual Toggle/Counter Cards */}
           <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
-            <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-850 pb-2.5">
-              <Package className="h-4 w-4 text-amber-500" /> Peças & Materiais Substituídos (Stock)
-            </h3>
-            
-            <div className="flex flex-col sm:flex-row gap-3">
-              <select
-                value={tempProductId}
-                onChange={(e) => {
-                  setTempProductId(e.target.value);
-                }}
-                className="bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 flex-1 focus:outline-none"
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-850 pb-2.5">
+              <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Package className="h-4 w-4 text-amber-500" /> Acessórios / Peças a ser substituído (Stock)
+              </h3>
+              
+              <button
+                type="button"
+                onClick={() => setShowPartsList(!showPartsList)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-amber-500/30 hover:bg-slate-850 text-[10px] font-black text-amber-400 uppercase tracking-wider rounded-xl transition-all cursor-pointer"
               >
-                <option value="">-- Selecione uma peça/acessório do stock --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id} disabled={p.quantity <= 0}>
-                    {p.name} ({formatKz(p.salePrice)} - Stock: {p.quantity} un)
-                  </option>
-                ))}
-              </select>
-              <div className="flex gap-2">
+                {showPartsList ? 'Ocultar stock' : 'Escolher do stock'}
+                {showPartsList ? <ChevronUp className="h-3.5 w-3.5 text-slate-400" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-400" />}
+              </button>
+            </div>
+            
+            {showPartsList ? (
+              products.length === 0 ? (
+                <p className="text-xs text-slate-500 italic py-2 text-center">Nenhuma peça registada no stock.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {products.map((p) => {
+                    const selectedItem = selectedParts.find(item => item.productId === p.id);
+                    const quantitySelected = selectedItem ? selectedItem.quantity : 0;
+                    const isOutOfStock = p.quantity <= 0;
+                    
+                    return (
+                      <div
+                        key={p.id}
+                        className={`p-3 rounded-2xl border transition-all flex flex-col justify-between gap-2.5 ${
+                          quantitySelected > 0
+                            ? 'bg-amber-500/10 border-amber-500/45 text-amber-400'
+                            : isOutOfStock
+                              ? 'bg-slate-950/20 border-slate-900 opacity-40'
+                              : 'bg-slate-900/40 border-slate-850 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-1">
+                          <div>
+                            <span className="font-extrabold text-xs block truncate leading-tight" title={p.name}>{p.name}</span>
+                            <span className="text-[9px] text-slate-500 block font-bold uppercase tracking-wider mt-0.5">
+                              Stock: {p.quantity} un
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold font-mono bg-slate-950/40 px-2 py-0.5 border border-slate-800 rounded text-slate-300 shrink-0">
+                            {formatKz(p.salePrice)}
+                          </span>
+                        </div>
+                        
+                        <div className="flex items-center justify-between border-t border-slate-800/40 pt-1.5">
+                          <span className="text-[9px] text-slate-500 uppercase font-black tracking-wider">Quantidade</span>
+                          {quantitySelected > 0 ? (
+                            <div className="flex items-center gap-1 bg-slate-950/60 p-0.5 rounded-xl border border-slate-800">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (quantitySelected === 1) {
+                                    setSelectedParts(selectedParts.filter(item => item.productId !== p.id));
+                                  } else {
+                                    setSelectedParts(selectedParts.map(item => 
+                                      item.productId === p.id 
+                                        ? { ...item, quantity: quantitySelected - 1 }
+                                        : item
+                                    ));
+                                  }
+                                }}
+                                className="w-6 h-6 rounded-lg bg-slate-900 hover:bg-slate-850 text-slate-200 text-xs font-black flex items-center justify-center transition-all cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="w-6 text-center text-xs font-black font-mono text-slate-100">{quantitySelected}</span>
+                              <button
+                                type="button"
+                                disabled={quantitySelected >= p.quantity}
+                                onClick={() => {
+                                  setSelectedParts(selectedParts.map(item => 
+                                    item.productId === p.id 
+                                      ? { ...item, quantity: quantitySelected + 1 }
+                                      : item
+                                  ));
+                                }}
+                                className="w-6 h-6 rounded-lg bg-[#0a0b0d] hover:bg-slate-850 text-slate-200 text-xs font-black flex items-center justify-center transition-all disabled:opacity-35 cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isOutOfStock}
+                              onClick={() => {
+                                setSelectedParts([...selectedParts, { 
+                                  productId: p.id, 
+                                  name: p.name, 
+                                  quantity: 1, 
+                                  unitPrice: p.salePrice, 
+                                  purchasePrice: p.purchasePrice 
+                                }]);
+                              }}
+                              className={`px-3 py-1 rounded-xl text-[9px] font-extrabold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                                isOutOfStock
+                                  ? 'bg-slate-900 text-slate-600 border border-slate-950 cursor-not-allowed'
+                                  : 'bg-amber-500/10 hover:bg-amber-500 hover:text-slate-950 text-amber-500 border border-amber-500/20'
+                              }`}
+                            >
+                              <Plus className="h-3 w-3" />
+                              Substituir
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <div>
+                {selectedParts.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-1">Nenhuma peça selecionada ainda. Clique em "Escolher do stock" acima.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedParts.map((p, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl text-xs text-amber-400">
+                        <span className="font-extrabold">{p.name}</span>
+                        <span className="text-[10px] font-bold font-mono text-slate-400">({p.quantity} un &times; {formatKz(p.unitPrice)})</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedParts(selectedParts.filter(item => item.productId !== p.productId))}
+                          className="text-amber-500 hover:text-rose-400 font-extrabold px-1 text-sm leading-none cursor-pointer transition-colors"
+                          title="Remover peça"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Opcional: Acessórios comprados noutro sítio e o valor */}
+          <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-3.5">
+            <div className="flex items-center gap-2 border-b border-slate-850/60 pb-2">
+              <Package className="h-4 w-4 text-amber-500" />
+              <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider">Acessórios de outro sítio (Opcional)</h3>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Acessórios / Peças Externas</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Suporte de Bidão carbono..."
+                  value={externalAccessories}
+                  onChange={(e) => setExternalAccessories(e.target.value)}
+                  className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500/20"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Valor do Acessório (Kz)</label>
                 <input
                   type="number"
-                  value={tempPartQty}
-                  onChange={(e) => setTempPartQty(Number(e.target.value))}
-                  placeholder="Qtd."
-                  className="bg-[#0a0b0d]/50 border border-slate-800 text-xs px-3 py-2 rounded-xl text-slate-200 w-20 text-center focus:outline-none"
-                  min={1}
+                  placeholder="Ex: 5000"
+                  value={externalAccessoriesValue || ''}
+                  onChange={(e) => setExternalAccessoriesValue(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono focus:outline-none"
+                  min={0}
                 />
-                <button
-                  type="button"
-                  onClick={handleAddPartToDraft}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-full shadow-md cursor-pointer uppercase tracking-wider text-[11px]"
-                >
-                  Adicionar Peça
-                </button>
               </div>
             </div>
-
-            {selectedParts.length === 0 ? (
-              <p className="text-xs text-slate-500 italic py-2 text-center">Nenhuma peça ou material do stock substituído.</p>
-            ) : (
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {selectedParts.map((p, index) => (
-                  <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-[#0a0b0d]/40 border border-slate-800 rounded-xl gap-2.5 text-xs">
-                    <div>
-                      <span className="font-extrabold text-slate-300 block">{p.name}</span>
-                      <span className="text-[10px] text-slate-500 block">
-                        Qtd: <strong className="text-slate-400 font-mono">{p.quantity}</strong> x {formatKz(p.unitPrice)} base
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between sm:justify-end gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Desc. Unit. (Kz):</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={p.discount || ''}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            const updated = [...selectedParts];
-                            updated[index] = { ...updated[index], discount: Math.min(p.unitPrice, val) };
-                            setSelectedParts(updated);
-                          }}
-                          className="w-20 bg-[#0a0b0d]/80 border border-slate-800 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-amber-500/45"
-                          min={0}
-                          max={p.unitPrice}
-                        />
-                      </div>
-                      <span className="font-mono text-amber-500 font-bold shrink-0 min-w-[70px] text-right">
-                        {formatKz((p.unitPrice - (p.discount || 0)) * p.quantity)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemovePartFromDraft(index)}
-                        className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-950/20 cursor-pointer border border-slate-800/85 bg-slate-900"
-                        title="Remover peça"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* Diagnostics / Extra Notes */}
-          <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
-            <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider block">Notas Técnicas / Diagnóstico da Oficina</h3>
-            <textarea
-              placeholder="Descreva as ações realizadas pelo mecânico, testes adicionais ou recomendações para futuras visitas..."
-              value={generalNotes}
-              onChange={(e) => setGeneralNotes(e.target.value)}
-              className="w-full bg-[#0a0b0d]/50 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 h-24 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500/20"
-            />
-          </div>
-
-          {/* Condições de Pagamento */}
-          <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
-            <h3 className="text-[10px] font-extrabold text-[#94a3b8] uppercase tracking-wider block">Condições de Pagamento (50% / 50%)</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setPaymentStatus('Pendente')}
-                className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
-                  paymentStatus === 'Pendente'
-                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/30 ring-1 ring-rose-500/20'
-                    : 'bg-[#0a0b0d]/30 text-slate-400 border-slate-850 hover:bg-slate-900'
-                }`}
-              >
-                <span>Pendente</span>
-                <span className="text-[10px] opacity-70 font-mono">0% Pago</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentStatus('Pago 50%')}
-                className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
-                  paymentStatus === 'Pago 50%'
-                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 ring-1 ring-amber-500/20'
-                    : 'bg-[#0a0b0d]/30 text-slate-400 border-slate-850 hover:bg-slate-900'
-                }`}
-              >
-                <span>Pago 50% (Sinal)</span>
-                <span className="text-[10px] opacity-70 font-mono">Sinal: {formatKz(Math.round(formTotal * 0.5))}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentStatus('Pago Integral')}
-                className={`p-3 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
-                  paymentStatus === 'Pago Integral'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 ring-1 ring-emerald-500/20'
-                    : 'bg-[#0a0b0d]/30 text-slate-400 border-slate-850 hover:bg-slate-900'
-                }`}
-              >
-                <span>Pago Integral (100%)</span>
-                <span className="text-[10px] opacity-70 font-mono">Total: {formatKz(formTotal)}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Meio de Pagamento */}
-          {paymentStatus !== 'Pendente' && (
+          {/* Tipo de Pagamento por Percentagem e Método de Pagamento */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Tipo de Pagamento por Percentagem */}
             <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
-              <h3 className="text-[10px] font-extrabold text-[#94a3b8] uppercase tracking-wider block">Meio de Pagamento</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider block">Tipo de Pagamento por Percentagem</h3>
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('Dinheiro')}
-                  className={`p-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                    paymentMethod === 'Dinheiro'
-                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 ring-1 ring-amber-500/20'
-                      : 'bg-[#0a0b0d]/30 text-slate-400 border-slate-850 hover:bg-slate-900'
+                  onClick={() => setPaymentStatus('Pendente')}
+                  className={`p-3 rounded-2xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                    paymentStatus === 'Pendente'
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
                   }`}
                 >
-                  <span>Cash / Dinheiro</span>
+                  <span>Pendente</span>
+                  <span className="text-[9px] opacity-70 font-mono">0% Pago</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('Transferência')}
-                  className={`p-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                    paymentMethod === 'Transferência'
-                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 ring-1 ring-amber-500/20'
-                      : 'bg-[#0a0b0d]/30 text-slate-400 border-slate-850 hover:bg-[#0a0b0d]/50'
+                  onClick={() => setPaymentStatus('Pago 50%')}
+                  className={`p-3 rounded-2xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                    paymentStatus === 'Pago 50%'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
                   }`}
                 >
-                  <span>Transferência</span>
+                  <span>Sinal (50%)</span>
+                  <span className="text-[9px] opacity-70 font-mono">{formatKz(Math.round(formTotal * 0.5))}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentStatus('Pago Integral')}
+                  className={`p-3 rounded-2xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                    paymentStatus === 'Pago Integral'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Integral (100%)</span>
+                  <span className="text-[9px] opacity-70 font-mono">{formatKz(formTotal)}</span>
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Pricing Breakdown Summary */}
+            {/* Meio de Pagamento */}
+            <div className="bg-[#0a0b0d]/50 p-5 rounded-2xl border border-slate-850 space-y-4">
+              <h3 className="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider block">Meio de Pagamento</h3>
+              {paymentStatus === 'Pendente' ? (
+                <div className="h-[62px] flex items-center justify-center border border-dashed border-slate-800 rounded-2xl text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                  Não Aplicável (Estado Pendente)
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('Dinheiro')}
+                    className={`p-3 rounded-2xl border text-xs font-bold transition-all flex items-center justify-center text-center cursor-pointer ${
+                      paymentMethod === 'Dinheiro'
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 font-extrabold'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>Dinheiro</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('Transferência')}
+                    className={`p-3 rounded-2xl border text-xs font-bold transition-all flex items-center justify-center text-center cursor-pointer ${
+                      paymentMethod === 'Transferência'
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 font-extrabold'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>Transferência</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('Dinheiro + Transferência')}
+                    className={`p-3 rounded-2xl border text-xs font-bold transition-all flex items-center justify-center text-center cursor-pointer ${
+                      paymentMethod === 'Dinheiro + Transferência'
+                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 font-extrabold'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>Metade de Cada</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Pricing Breakdown Summary / Total do Valor */}
           <div className="p-5 bg-gradient-to-br from-[#111216] to-[#111216]/60 border border-slate-850 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="space-y-1">
               <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Detalhamento Financeiro:</p>
               <div className="flex flex-wrap gap-x-6 text-xs font-semibold text-slate-300">
-                <span>Mão de Obra: <strong className="text-amber-400 font-mono font-bold">{formatKz(laborTotal)}</strong></span>
+                <span>Manutenção: <strong className="text-amber-400 font-mono font-bold">{formatKz(laborTotal)}</strong></span>
                 <span className="hidden sm:inline text-slate-700">|</span>
-                <span>Substituição Peças: <strong className="text-amber-400 font-mono font-bold">{formatKz(partsTotal)}</strong></span>
+                <span>Produtos/Peças: <strong className="text-amber-400 font-mono font-bold">{formatKz(partsTotal)}</strong></span>
+                {externalAccessoriesValue > 0 && (
+                  <>
+                    <span className="hidden sm:inline text-slate-700">|</span>
+                    <span>Outro Sítio: <strong className="text-amber-400 font-mono font-bold">{formatKz(externalAccessoriesValue)}</strong></span>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="text-left sm:text-right">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Geral Estimado</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Valor Total Geral</span>
               <span className="text-2xl font-black text-amber-500 font-mono">
                 {formatKz(formTotal)}
               </span>
@@ -1088,19 +1228,19 @@ export default function WorkOrders({
           </div>
 
           {/* Submit/Cancel buttons */}
-          <div className="flex gap-3 pt-3 border-t border-slate-800">
+          <div className="flex gap-3 pt-3 border-t border-slate-850">
             <button
               type="button"
               onClick={() => setActiveTab('list')}
-              className="flex-1 py-3 bg-slate-800/60 hover:bg-slate-800 text-slate-300 font-bold rounded-full text-xs transition-colors cursor-pointer"
+              className="flex-1 py-3 bg-slate-800/60 hover:bg-slate-850 text-slate-300 font-bold rounded-full text-xs transition-colors cursor-pointer"
             >
-              Cancelar & Descartar
+              Cancelar & Voltar
             </button>
             <button
               type="submit"
               className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-full text-xs shadow-lg shadow-amber-500/20 transition-all active:translate-y-0.5 cursor-pointer uppercase tracking-wider"
             >
-              {editingWOId ? 'Salvar Alterações (Atualizar)' : 'Registrar Ordem de Serviço'}
+              {editingWOId ? 'Salvar Alterações' : 'Criar Ordem de Serviço'}
             </button>
           </div>
         </form>
@@ -1141,14 +1281,13 @@ export default function WorkOrders({
             <div className="flex justify-between items-start gap-4 pb-6 border-b border-slate-200">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  {/* Miniature text Logo for black/white compatibility */}
-                  <span className="text-2xl font-black tracking-tighter text-amber-800">BIKE ONE</span>
-                  <span className="px-2 py-0.5 bg-slate-100 text-[10px] text-slate-600 font-extrabold border border-slate-200 rounded">LUANDA</span>
+                  <span className="text-2xl font-black tracking-tighter text-amber-800 uppercase">{shopName}</span>
+                  <span className="px-2 py-0.5 bg-slate-100 text-[10px] text-slate-600 font-extrabold border border-slate-200 rounded">FACTURA DE SERVIÇO</span>
                 </div>
                 <div className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                  <p>Bike One - Oficina de Bicicletas & Acessórios Premium</p>
-                  <p>Avenida Pedro de Castro Van-Dúnem Loy, Luanda, Angola</p>
-                  <p>Contacto: +244 923 000 000 | geral@bikeone.ao</p>
+                  <p>{shopName} - Oficina de Bicicletas</p>
+                  <p>{shopAddress}</p>
+                  <p>Contacto: {shopPhone} | NIF: {shopNif}</p>
                 </div>
               </div>
 
@@ -1166,134 +1305,106 @@ export default function WorkOrders({
               </div>
             </div>
 
-            {/* Client & Bike block */}
-            <div className="grid grid-cols-2 gap-6 py-6 border-b border-slate-250 text-xs">
-              <div className="space-y-2">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cliente:</h4>
-                <div className="space-y-1 font-medium">
-                  <p className="font-extrabold text-slate-800 text-sm">{viewingWO.customer.name}</p>
-                  <p className="text-slate-600">Contacto: {viewingWO.customer.phone}</p>
-                  {viewingWO.customer.email && <p className="text-slate-600">Email: {viewingWO.customer.email}</p>}
-                  {viewingWO.customer.address && <p className="text-slate-600">Morada: {viewingWO.customer.address}</p>}
-                  {viewingWO.customer.notes && (
-                    <p className="text-amber-800 text-[10px] mt-1.5 p-1.5 bg-amber-50 border border-amber-100 rounded">
-                      <strong>Obs. Cliente:</strong> {viewingWO.customer.notes}
-                    </p>
-                  )}
-                </div>
+            {/* 1. Nome do Cliente e Telefone */}
+            <div className="grid grid-cols-2 gap-4 py-4 border-b border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Nome do Cliente</span>
+                <span className="text-sm font-black text-slate-800 block">{viewingWO.customer.name}</span>
               </div>
-
-              <div className="space-y-2 border-l border-slate-150 pl-6">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bicicleta:</h4>
-                <div className="space-y-1 font-medium">
-                  <p className="font-extrabold text-slate-800 text-sm">{viewingWO.bicycle.brand} {viewingWO.bicycle.model}</p>
-                  {viewingWO.bicycle.color && <p className="text-slate-600">Cor: {viewingWO.bicycle.color}</p>}
-                  {viewingWO.bicycle.notes && (
-                    <p className="text-slate-500 italic mt-1.5 p-1.5 bg-slate-50 border border-slate-100 rounded text-[10px]">
-                      Sintomas: {viewingWO.bicycle.notes}
-                    </p>
-                  )}
-                </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Telefone</span>
+                <span className="text-sm font-bold text-slate-800 block font-mono">{viewingWO.customer.phone}</span>
               </div>
             </div>
 
-            {/* Itemized Table of Services and Parts */}
-            <div className="py-6 space-y-4">
-              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Descritivo de Serviços & Peças:</h4>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider font-bold border-b border-slate-200">
-                      <th className="py-2.5 px-3">Item / Descrição</th>
-                      <th className="py-2.5 px-3 text-center">Tipo</th>
-                      <th className="py-2.5 px-3 text-center">Qtd.</th>
-                      <th className="py-2.5 px-3 text-right">Preço Unit.</th>
-                      <th className="py-2.5 px-3 text-right">Desconto</th>
-                      <th className="py-2.5 px-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150">
-                    {/* 1. Services */}
-                    {viewingWO.services.map((s, idx) => (
-                      <tr key={`s-${idx}`}>
-                        <td className="py-3 px-3 font-bold text-slate-800">
-                          {s.name}
-                          {s.discount ? <span className="text-[9px] text-rose-600 font-normal block">Desconto aplicado</span> : null}
-                        </td>
-                        <td className="py-3 px-3 text-center"><span className="text-[9px] bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-extrabold">Mão de Obra</span></td>
-                        <td className="py-3 px-3 text-center font-bold">1</td>
-                        <td className="py-3 px-3 text-right font-mono text-slate-600">{formatKz(s.laborValue)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-rose-600 font-semibold">{s.discount ? `-${formatKz(s.discount)}` : '0 Kz'}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">{formatKz(s.laborValue - (s.discount || 0))}</td>
-                      </tr>
-                    ))}
-                    {/* 2. Parts */}
-                    {viewingWO.parts.map((p, idx) => (
-                      <tr key={`p-${idx}`}>
-                        <td className="py-3 px-3 font-bold text-slate-850">
-                          {p.name}
-                          {p.discount ? <span className="text-[9px] text-rose-600 font-normal block">Desconto unitário aplicado</span> : null}
-                        </td>
-                        <td className="py-3 px-3 text-center"><span className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded font-extrabold">Material</span></td>
-                        <td className="py-3 px-3 text-center font-bold">{p.quantity}</td>
-                        <td className="py-3 px-3 text-right font-mono text-slate-600">{formatKz(p.unitPrice)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-rose-600 font-semibold">{p.discount ? `-${formatKz(p.discount * p.quantity)}` : '0 Kz'}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">{formatKz((p.unitPrice - (p.discount || 0)) * p.quantity)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* 2. Marca da Bicicleta */}
+            <div className="py-4 border-b border-slate-200 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Marca da Bicicleta</span>
+              <span className="text-sm font-black text-slate-850 block">{viewingWO.bicycle.brand} <span className="text-xs font-medium text-slate-500">({viewingWO.bicycle.model} - {viewingWO.bicycle.color || 'Sem Cor'})</span></span>
+            </div>
+
+            {/* 3. Serviço que vai ser executado */}
+            <div className="py-4 border-b border-slate-200 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Serviço que vai ser executado</span>
+              <div className="mt-1.5 space-y-1">
+                {viewingWO.services.map((s, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <span className="font-extrabold text-slate-800">{s.name}</span>
+                    <span className="font-mono text-slate-600 font-bold">{formatKz(s.laborValue)}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Financial Summary panel */}
-            <div className="border-t border-slate-200 pt-6 flex flex-col items-end text-xs space-y-1.5">
-              <div className="w-full max-w-xs flex justify-between font-medium text-slate-600">
-                <span>Subtotal Mão de Obra:</span>
-                <span className="font-mono text-slate-800">
-                  {formatKz(viewingWO.services.reduce((sum, s) => sum + s.laborValue, 0))}
-                </span>
-              </div>
-              <div className="w-full max-w-xs flex justify-between font-medium text-slate-600">
-                <span>Subtotal Peças:</span>
-                <span className="font-mono text-slate-800">
-                  {formatKz(viewingWO.parts.reduce((sum, p) => sum + p.unitPrice * p.quantity, 0))}
-                </span>
-              </div>
-              
-              {/* Total Discount applied */}
-              {(() => {
-                const totalDisc = (viewingWO.services.reduce((sum, s) => sum + (s.discount || 0), 0) + 
-                                  viewingWO.parts.reduce((sum, p) => sum + (p.discount || 0) * p.quantity, 0));
-                if (totalDisc > 0) {
-                  return (
-                    <div className="w-full max-w-xs flex justify-between font-bold text-rose-600">
-                      <span>Total de Descontos:</span>
-                      <span className="font-mono">-{formatKz(totalDisc)}</span>
+            {/* 4. Peça a ser substituída */}
+            <div className="py-4 border-b border-slate-200 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Peça a ser substituída</span>
+              <div className="mt-1.5 space-y-1">
+                {viewingWO.parts.length === 0 ? (
+                  <p className="text-slate-400 italic p-2 bg-slate-50 border border-slate-100 rounded-lg">Nenhuma peça cadastrada para substituição nesta Ordem de Serviço.</p>
+                ) : (
+                  viewingWO.parts.map((p, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                      <span className="font-extrabold text-slate-800">
+                        {p.name} <span className="text-slate-400 font-normal">({p.quantity}x)</span>
+                      </span>
+                      <span className="font-mono text-slate-600 font-bold">{formatKz(p.unitPrice * p.quantity)}</span>
                     </div>
-                  );
-                }
-                return null;
-              })()}
+                  ))
+                )}
+              </div>
+            </div>
 
-              <div className="w-full max-w-xs flex justify-between font-bold text-slate-800 text-sm border-t border-slate-200 pt-2.5 mt-1.5">
-                <span>VALOR TOTAL SERVIÇO:</span>
+            {/* 5. Acessórios que vai se comprar em outro sítio e o valor */}
+            <div className="py-4 border-b border-slate-200 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Acessórios que vai se comprar em outro sítio e o valor</span>
+              <div className="mt-1.5 bg-amber-50/50 p-2.5 border border-amber-100/60 rounded-xl flex justify-between items-center">
+                <div>
+                  <span className="font-extrabold text-amber-900">{viewingWO.externalAccessories || 'Nenhum acessório externo registado'}</span>
+                </div>
+                <div>
+                  <span className="font-mono text-amber-800 font-extrabold bg-amber-50 px-2 py-0.5 border border-amber-200 rounded">{formatKz(viewingWO.externalAccessoriesValue || 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 6 & 7. Resumo Financeiro (Valor de produtos, valor de manutenção, Valor total) */}
+            <div className="py-5 flex flex-col items-end text-xs space-y-2 bg-slate-50/40 p-4 rounded-xl border border-slate-150 mt-4">
+              <div className="w-full max-w-xs flex justify-between font-medium text-slate-600">
+                <span>Valor de Manutenção (Mão de Obra):</span>
+                <span className="font-mono text-slate-800 font-extrabold">{formatKz(viewingWO.laborTotal)}</span>
+              </div>
+              <div className="w-full max-w-xs flex justify-between font-medium text-slate-600">
+                <span>Valor de Produtos (Peças):</span>
+                <span className="font-mono text-slate-800 font-extrabold">{formatKz(viewingWO.partsTotal)}</span>
+              </div>
+              <div className="w-full max-w-xs flex justify-between font-medium text-slate-600">
+                <span>Acessórios de Outro Sítio:</span>
+                <span className="font-mono text-slate-800 font-extrabold">{formatKz(viewingWO.externalAccessoriesValue || 0)}</span>
+              </div>
+              <div className="w-full max-w-xs flex justify-between font-bold text-slate-900 text-sm border-t border-slate-200 pt-2.5 mt-1.5 font-sans">
+                <span className="uppercase text-amber-950 font-black">Valor Total Geral:</span>
                 <span className="font-mono text-md text-amber-800 font-black">{formatKz(viewingWO.total)}</span>
               </div>
 
-              {/* Payment details */}
-              <div className="w-full max-w-xs border-t border-dashed border-slate-200 pt-2 mt-1 space-y-1">
-                <div className="flex justify-between font-bold text-slate-700 text-[11px]">
+              {/* Payment Details */}
+              <div className="w-full max-w-xs border-t border-dashed border-slate-200 pt-2.5 mt-2 space-y-1 text-[11px]">
+                <div className="flex justify-between font-extrabold text-slate-700">
                   <span>Estado de Pagamento:</span>
-                  <span className="uppercase text-amber-800">{viewingWO.paymentStatus || 'Pendente'}</span>
+                  <span className="uppercase text-amber-900 font-black">{viewingWO.paymentStatus || 'Pendente'}</span>
                 </div>
-                <div className="flex justify-between font-medium text-slate-600 text-[11px]">
-                  <span>Valor Pago (Sinal/Integral):</span>
-                  <span className="font-mono text-slate-800">{formatKz(viewingWO.amountPaid || 0)}</span>
+                {viewingWO.paymentMethod && (
+                  <div className="flex justify-between font-semibold text-slate-600">
+                    <span>Método de Pagamento:</span>
+                    <span className="text-slate-800">{viewingWO.paymentMethod}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-slate-850 border-t border-slate-150 pt-1">
+                  <span>Valor Pago:</span>
+                  <span className="font-mono text-emerald-800 font-bold">{formatKz(viewingWO.amountPaid || 0)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-slate-850 text-[11px] border-t border-slate-150 pt-1">
-                  <span>Valor Pendente:</span>
+                <div className="flex justify-between font-black text-slate-900 border-t border-slate-150 pt-1">
+                  <span>Valor em Falta:</span>
                   <span className="font-mono text-rose-700 font-black">{formatKz(Math.max(0, viewingWO.total - (viewingWO.amountPaid || 0)))}</span>
                 </div>
               </div>

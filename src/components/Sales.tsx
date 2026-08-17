@@ -51,12 +51,12 @@ export default function Sales({
   const [selectedTimePeriod, setSelectedTimePeriod] = useState<'today' | 'all'>('today');
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Selected date filter (defaults to today's date)
+  const [targetDateStr, setTargetDateStr] = useState(new Date().toISOString().split('T')[0]);
+
   React.useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedFilter, selectedTimePeriod, targetDateStr]);
-
-  // Selected date filter (defaults to today's date)
-  const [targetDateStr, setTargetDateStr] = useState(new Date().toISOString().split('T')[0]);
 
   // Modal to view specific direct sale details
   const [viewingSale, setViewingSale] = useState<DirectSale | null>(null);

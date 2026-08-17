@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   UserCheck,
-  Coins
+  Coins,
+  Settings
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,7 +38,7 @@ export default function Sidebar({
     { id: 'vendas', name: 'Vendas e Caixa', icon: Coins },
     { id: 'clientes', name: 'Clientes e Equipa', icon: UserCheck },
     { id: 'stock', name: 'Stock e Serviços', icon: Package },
-    { id: 'relatorios', name: 'Balanço & Lucros', icon: TrendingUp },
+    { id: 'settings', name: 'Configurações', icon: Settings },
   ] as const;
 
   const handleNavClick = (view: typeof navItems[number]['id']) => {

@@ -66,7 +66,9 @@ export interface WorkOrder {
   notes?: string;
   paymentStatus?: 'Pendente' | 'Pago 50%' | 'Pago Integral';
   amountPaid?: number;
-  paymentMethod?: 'Dinheiro' | 'Transferência';
+  paymentMethod?: 'Dinheiro' | 'Transferência' | 'Dinheiro + Transferência';
+  externalAccessories?: string;
+  externalAccessoriesValue?: number;
 }
 
 export interface DirectSaleItem {
@@ -86,7 +88,7 @@ export interface DirectSale {
   createdAt: string;
   paymentStatus?: 'Pendente' | 'Pago 50%' | 'Pago Integral';
   amountPaid?: number;
-  paymentMethod?: 'Dinheiro' | 'Transferência';
+  paymentMethod?: 'Dinheiro' | 'Transferência' | 'Dinheiro + Transferência';
 }
 
 export interface User {

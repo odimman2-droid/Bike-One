@@ -12,7 +12,7 @@ interface QuickSaleModalProps {
     items: DirectSaleItem[],
     paymentStatus: 'Pendente' | 'Pago 50%' | 'Pago Integral',
     amountPaid: number,
-    paymentMethod: 'Dinheiro' | 'Transferência'
+    paymentMethod: 'Dinheiro' | 'Transferência' | 'Dinheiro + Transferência'
   ) => void;
 }
 
@@ -28,7 +28,7 @@ export default function QuickSaleModal({
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [selectedDiscount, setSelectedDiscount] = useState<number>(0);
   const [paymentStatus, setPaymentStatus] = useState<'Pendente' | 'Pago 50%' | 'Pago Integral'>('Pago Integral');
-  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'Transferência'>('Dinheiro');
+  const [paymentMethod, setPaymentMethod] = useState<'Dinheiro' | 'Transferência' | 'Dinheiro + Transferência'>('Dinheiro');
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
@@ -307,7 +307,7 @@ export default function QuickSaleModal({
           {paymentStatus !== 'Pendente' && (
             <div className="space-y-1 bg-[#0a0b0d]/40 p-4 border border-slate-800 rounded-2xl">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Meio de Pagamento</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('Dinheiro')}
@@ -329,6 +329,17 @@ export default function QuickSaleModal({
                   }`}
                 >
                   <span>Transferência</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('Dinheiro + Transferência')}
+                  className={`py-2 px-1 rounded-xl border text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    paymentMethod === 'Dinheiro + Transferência'
+                      ? 'bg-amber-500/10 text-amber-500 border-amber-500/30'
+                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Metade de Cada</span>
                 </button>
               </div>
             </div>

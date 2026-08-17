@@ -25,7 +25,8 @@ interface DashboardProps {
   expenses: Expense[];
   balanceAdjustments: BalanceAdjustment[];
   salaryAdvances: SalaryAdvance[];
-  onNavigate: (view: 'os' | 'stock' | 'servicos' | 'relatorios' | 'clientes' | 'vendas' | 'dashboard') => void;
+  baseBalance: number;
+  onNavigate: (view: any) => void;
   onAddBalanceAdjustment: (adj: Omit<BalanceAdjustment, 'id' | 'createdAt'>) => void;
   onDeleteBalanceAdjustment: (id: string) => void;
   onAddSalaryAdvance: (adv: Omit<SalaryAdvance, 'id' | 'createdAt' | 'status'>) => void;
@@ -43,6 +44,7 @@ export default function Dashboard({
   expenses,
   balanceAdjustments,
   salaryAdvances,
+  baseBalance,
   onNavigate,
   onAddBalanceAdjustment,
   onDeleteBalanceAdjustment,
@@ -52,8 +54,8 @@ export default function Dashboard({
   onOpenCreateOS,
   onOpenQuickSale,
 }: DashboardProps) {
-  // Balance calculations (Base: 350,000 Kz)
-  const BASE_BALANCE = 350000;
+  // Balance calculations (Dynamic Base Balance)
+  const BASE_BALANCE = baseBalance;
 
   const adjustmentsSum = balanceAdjustments.reduce((sum, adj) => {
     if (adj.type === 'entrada') return sum + adj.amount;
