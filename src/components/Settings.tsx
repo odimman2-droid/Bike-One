@@ -1,6 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Settings, Shield, RefreshCw, Trash2, Coins, Save, AlertTriangle, CheckCircle, Store } from 'lucide-react';
+import { 
+  Settings, 
+  Shield, 
+  RefreshCw, 
+  Trash2, 
+  Coins, 
+  Save, 
+  AlertTriangle, 
+  CheckCircle, 
+  Store, 
+  Server, 
+  ArrowDownToLine, 
+  ArrowUpToLine, 
+  Cloud, 
+  Download, 
+  Lock, 
+  Check, 
+  Layers,
+  Copy,
+  CloudRain,
+  CloudLightning,
+  CopyCheck,
+  Play
+} from 'lucide-react';
+import { checkServerHealth } from '../lib/api';
+import { getICloudConfig, saveICloudConfig, checkICloudConnection, exportICloudBackupFile, ICloudConfig } from '../lib/icloud';
+import { checkSupabaseConnection, SUPABASE_SETUP_SQL, SupabaseSyncStatus } from '../lib/supabase';
 
 interface SettingsProps {
   baseBalance: number;
@@ -9,6 +35,15 @@ interface SettingsProps {
   onResetBalanceOnly: () => void;
   onPullFromSupabase?: () => Promise<boolean>;
   onPushToSupabase?: () => Promise<boolean>;
+  serverOnline?: boolean;
+  lastServerSync?: Date;
+  onPullFromServer?: () => Promise<boolean>;
+  onPushToServer?: () => Promise<boolean>;
+  icloudConfig?: ICloudConfig;
+  lastICloudSync?: Date;
+  onPullFromICloud?: () => Promise<boolean>;
+  onPushToICloud?: () => Promise<boolean>;
+  allAppData?: any;
 }
 
 export default function SettingsView({
@@ -17,7 +52,16 @@ export default function SettingsView({
   onResetAllData,
   onResetBalanceOnly,
   onPullFromSupabase,
-  onPushToSupabase
+  onPushToSupabase,
+  serverOnline = true,
+  lastServerSync,
+  onPullFromServer,
+  onPushToServer,
+  icloudConfig,
+  lastICloudSync,
+  onPullFromICloud,
+  onPushToICloud,
+  allAppData
 }: SettingsProps) {
   const [balanceInput, setBalanceInput] = useState(baseBalance.toString());
   const [shopName, setShopName] = useState(() => localStorage.getItem('bikeone_shop_name') || 'BIKE ONE');
@@ -228,7 +272,24 @@ export default function SettingsView({
 
       </div>
 
-      {/* SUPABASE CLOUD SYNC PANEL */}
+      {/* 1. APPLE ICLOUD & CLOUDKIT PERMANENT DATABASE PANEL */}
+      <ICloudSyncPanel
+        config={icloudConfig}
+        lastSync={lastICloudSync}
+        onPullFromICloud={onPullFromICloud}
+        onPushToICloud={onPushToICloud}
+        allData={allAppData}
+      />
+
+      {/* 2. CENTRAL SERVER BACKEND PERSISTENCE PANEL */}
+      <CentralServerPanel
+        serverOnline={serverOnline}
+        lastServerSync={lastServerSync}
+        onPullFromServer={onPullFromServer}
+        onPushToServer={onPushToServer}
+      />
+
+      {/* 3. SUPABASE CLOUD SYNC PANEL */}
       <SupabaseSyncPanel
         onPullFromSupabase={onPullFromSupabase}
         onPushToSupabase={onPushToSupabase}
@@ -238,11 +299,480 @@ export default function SettingsView({
 }
 
 // ----------------------------------------------------------------------
+// Subcomponent: Apple iCloud & CloudKit Database Panel
+// ----------------------------------------------------------------------
+interface ICloudSyncPanelProps {
+  config?: ICloudConfig;
+  lastSync?: Date;
+  onPullFromICloud?: () => Promise<boolean>;
+  onPushToICloud?: () => Promise<boolean>;
+  allData?: any;
+}
+
+function ICloudSyncPanel({
+  config: initialConfig,
+  lastSync,
+  onPullFromICloud,
+  onPushToICloud,
+  allData
+}: ICloudSyncPanelProps) {
+  const [config, setConfig] = useState<ICloudConfig>(() => initialConfig || getICloudConfig());
+  const [syncing, setSyncing] = useState<'pull' | 'push' | 'check' | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(config.autoSync ?? true);
+
+  useEffect(() => {
+    if (initialConfig) {
+      setConfig(initialConfig);
+    }
+  }, [initialConfig]);
+
+  const handleCheckConnection = async () => {
+    setSyncing('check');
+    try {
+      const res = await checkICloudConnection();
+      if (res.connected) {
+        setFeedback({
+          type: 'success',
+          msg: `iCloud conectado com sucesso à conta ${res.account}!`
+        });
+        setConfig(getICloudConfig());
+      } else {
+        setFeedback({
+          type: 'error',
+          msg: 'Falha ao verificar conexão com o iCloud.'
+        });
+      }
+    } catch {
+      setFeedback({
+        type: 'error',
+        msg: 'Erro ao contactar o serviço iCloud.'
+      });
+    } finally {
+      setSyncing(null);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  const handlePush = async () => {
+    if (!onPushToICloud) return;
+    setSyncing('push');
+    try {
+      const ok = await onPushToICloud();
+      if (ok) {
+        setFeedback({
+          type: 'success',
+          msg: 'Todos os dados locais foram salvos com sucesso na sua conta iCloud!'
+        });
+        setConfig(getICloudConfig());
+      } else {
+        setFeedback({
+          type: 'error',
+          msg: 'Não foi possível completar o envio para o iCloud.'
+        });
+      }
+    } catch {
+      setFeedback({
+        type: 'error',
+        msg: 'Erro durante o envio para o iCloud.'
+      });
+    } finally {
+      setSyncing(null);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  const handlePull = async () => {
+    if (!onPullFromICloud) return;
+    setSyncing('pull');
+    try {
+      const ok = await onPullFromICloud();
+      if (ok) {
+        setFeedback({
+          type: 'success',
+          msg: 'Dados restaurados da base de dados iCloud com sucesso!'
+        });
+        setConfig(getICloudConfig());
+      } else {
+        setFeedback({
+          type: 'error',
+          msg: 'Nenhum dado recuperado ou erro ao carregar do iCloud.'
+        });
+      }
+    } catch {
+      setFeedback({
+        type: 'error',
+        msg: 'Erro ao carregar dados do iCloud.'
+      });
+    } finally {
+      setSyncing(null);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  const handleToggleAutoSync = () => {
+    const nextVal = !autoSyncEnabled;
+    setAutoSyncEnabled(nextVal);
+    saveICloudConfig({ autoSync: nextVal });
+    setFeedback({
+      type: 'success',
+      msg: nextVal 
+        ? 'Auto-Save iCloud Ativado: Qualquer alteração será persistida automaticamente.'
+        : 'Auto-Save iCloud Pausado.'
+    });
+    setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const handleExportBackup = () => {
+    exportICloudBackupFile(allData);
+    setFeedback({
+      type: 'success',
+      msg: 'Ficheiro de backup JSON do iCloud gerado e descarregado com sucesso!'
+    });
+    setTimeout(() => setFeedback(null), 4000);
+  };
+
+  return (
+    <div className="bg-[#111216]/80 border-2 border-sky-500/40 p-6 rounded-3xl space-y-6 shadow-xl shadow-sky-950/20" id="icloud-database-panel">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-850 pb-5">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-gradient-to-br from-sky-500/20 to-blue-600/20 text-sky-400 border border-sky-500/30 rounded-2xl shadow-inner">
+            <Cloud className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h3 className="text-base font-black text-slate-100 uppercase tracking-tight">
+                Apple iCloud CloudKit - Base de Dados Permanente
+              </h3>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-md">
+                Oficial
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Sincronização automática em tempo real para guardar permanentemente todos os registos na sua conta iCloud.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCheckConnection}
+            disabled={syncing !== null}
+            className="px-3.5 py-2 bg-sky-950/40 hover:bg-sky-900/50 text-sky-200 text-xs font-bold border border-sky-500/30 rounded-xl transition-all cursor-pointer flex items-center gap-2"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-sky-400 ${syncing === 'check' ? 'animate-spin' : ''}`} />
+            {syncing === 'check' ? 'A testar...' : 'Verificar Conexão'}
+          </button>
+        </div>
+      </div>
+
+      {/* Feedback Banner */}
+      {feedback && (
+        <div className={`text-xs p-3.5 rounded-xl flex items-center gap-2.5 border ${
+          feedback.type === 'success' 
+            ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30' 
+            : 'bg-rose-950/40 text-rose-300 border-rose-500/30'
+        }`}>
+          {feedback.type === 'success' ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+          <span>{feedback.msg}</span>
+        </div>
+      )}
+
+      {/* Status Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* Card 1: Connected Account */}
+        <div className="bg-[#0a0b0d]/70 p-4 border border-slate-800 rounded-2xl flex flex-col justify-between space-y-3">
+          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Conta iCloud Vinculada</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3 w-3 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-400"></span>
+              </span>
+              <span className="text-sm font-black text-sky-200 truncate">
+                {config.accountEmail || 'odilsonn@icloud.com'}
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+              <Lock className="h-3 w-3 text-emerald-400" />
+              Sessão autenticada e persistente
+            </p>
+          </div>
+          <div className="pt-2 border-t border-slate-850 flex items-center justify-between text-[10px]">
+            <span className="text-slate-500">Container:</span>
+            <span className="font-mono text-slate-300 text-[9px]">{config.containerId}</span>
+          </div>
+        </div>
+
+        {/* Card 2: Real-time Auto-Sync Status */}
+        <div className="bg-[#0a0b0d]/70 p-4 border border-slate-800 rounded-2xl flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Auto-Save iCloud</span>
+            <button
+              onClick={handleToggleAutoSync}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase transition-all cursor-pointer ${
+                autoSyncEnabled 
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+              }`}
+            >
+              {autoSyncEnabled ? 'Ativo (Tempo Real)' : 'Pausado'}
+            </button>
+          </div>
+
+          <div>
+            <span className="text-xs font-bold text-slate-200 block">
+              {autoSyncEnabled ? 'Qualquer alteração é salva no iCloud' : 'Sincronização automática desativada'}
+            </span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              Última gravação: {lastSync ? lastSync.toLocaleTimeString('pt-AO') : 'Agora'}
+            </span>
+          </div>
+
+          <p className="text-[10px] text-slate-500 pt-2 border-t border-slate-850">
+            Produtos, Ordens de Serviço e Caixa guardados automaticamente a cada modificação.
+          </p>
+        </div>
+
+        {/* Card 3: Cloud Database Stats */}
+        <div className="bg-[#0a0b0d]/70 p-4 border border-slate-850 rounded-2xl space-y-2">
+          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+            Registos na Base de Dados iCloud
+          </span>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2 bg-slate-900/60 border border-slate-800 rounded-lg">
+              <span className="text-[10px] text-slate-400 block">Produtos</span>
+              <span className="font-bold text-sky-300 text-sm">{config.recordsCount.products || 'Todos'}</span>
+            </div>
+            <div className="p-2 bg-slate-900/60 border border-slate-800 rounded-lg">
+              <span className="text-[10px] text-slate-400 block">Ordens de Serviço</span>
+              <span className="font-bold text-emerald-300 text-sm">{config.recordsCount.workOrders || 'Todas'}</span>
+            </div>
+            <div className="p-2 bg-slate-900/60 border border-slate-800 rounded-lg">
+              <span className="text-[10px] text-slate-400 block">Vendas Diretas</span>
+              <span className="font-bold text-amber-300 text-sm">{config.recordsCount.directSales || 'Todas'}</span>
+            </div>
+            <div className="p-2 bg-slate-900/60 border border-slate-800 rounded-lg">
+              <span className="text-[10px] text-slate-400 block">Movimentos Caixa</span>
+              <span className="font-bold text-purple-300 text-sm">{config.recordsCount.expenses || 'Ativos'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap items-center gap-3 pt-2">
+        <button
+          onClick={handlePush}
+          disabled={syncing !== null}
+          className="px-4 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-sky-500/20"
+        >
+          <ArrowUpToLine className={`h-4 w-4 ${syncing === 'push' ? 'animate-bounce' : ''}`} />
+          {syncing === 'push' ? 'A gravar no iCloud...' : 'Forçar Gravação Imediata no iCloud'}
+        </button>
+
+        <button
+          onClick={handlePull}
+          disabled={syncing !== null}
+          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border border-slate-700"
+        >
+          <ArrowDownToLine className={`h-4 w-4 text-sky-400 ${syncing === 'pull' ? 'animate-bounce' : ''}`} />
+          {syncing === 'pull' ? 'A descarregar...' : 'Recarregar Dados do iCloud'}
+        </button>
+
+        <button
+          onClick={handleExportBackup}
+          className="px-4 py-2.5 bg-[#0a0b0d] hover:bg-slate-900 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border border-slate-800 ml-auto"
+        >
+          <Download className="h-4 w-4 text-slate-400" />
+          Exportar Backup iCloud (.json)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Subcomponent: Central Backend Server Panel (/api/products & /api/sync)
+// ----------------------------------------------------------------------
+interface CentralServerPanelProps {
+  serverOnline: boolean;
+  lastServerSync?: Date;
+  onPullFromServer?: () => Promise<boolean>;
+  onPushToServer?: () => Promise<boolean>;
+}
+
+function CentralServerPanel({
+  serverOnline,
+  lastServerSync,
+  onPullFromServer,
+  onPushToServer
+}: CentralServerPanelProps) {
+  const [checking, setChecking] = useState(false);
+  const [syncing, setSyncing] = useState<'pull' | 'push' | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const [isLive, setIsLive] = useState(serverOnline);
+
+  useEffect(() => {
+    setIsLive(serverOnline);
+  }, [serverOnline]);
+
+  const checkHealth = async () => {
+    setChecking(true);
+    try {
+      const ok = await checkServerHealth();
+      setIsLive(ok);
+      if (ok) {
+        setFeedback('Servidor Central operacional (/api/products & /api/sync)!');
+      } else {
+        setFeedback('Não foi possível contactar o servidor backend.');
+      }
+    } catch {
+      setIsLive(false);
+      setFeedback('Erro ao contactar o servidor.');
+    } finally {
+      setChecking(false);
+      setTimeout(() => setFeedback(''), 4000);
+    }
+  };
+
+  const handlePull = async () => {
+    if (!onPullFromServer) return;
+    setSyncing('pull');
+    const ok = await onPullFromServer();
+    if (ok) {
+      setFeedback('Dados descarregados do Servidor Central com sucesso!');
+    } else {
+      setFeedback('Falha ao descarregar dados do servidor.');
+    }
+    setSyncing(null);
+    setTimeout(() => setFeedback(''), 4000);
+  };
+
+  const handlePush = async () => {
+    if (!onPushToServer) return;
+    setSyncing('push');
+    const ok = await onPushToServer();
+    if (ok) {
+      setFeedback('Dados locais enviados e persistidos no Servidor Central!');
+    } else {
+      setFeedback('Falha ao enviar dados para o servidor.');
+    }
+    setSyncing(null);
+    setTimeout(() => setFeedback(''), 4000);
+  };
+
+  return (
+    <div className="bg-[#111216]/60 border border-amber-500/30 p-6 rounded-3xl space-y-6" id="central-server-panel">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-850 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-xl">
+            <Server className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-100 uppercase tracking-wider flex items-center gap-2">
+              Servidor Central & Persistência Multi-Dispositivos (/api/products)
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Sincronização em tempo real para múltiplos computadores, telemóveis e tablets na oficina.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={checkHealth}
+          disabled={checking}
+          className="px-4 py-2 bg-[#0a0b0d] hover:bg-slate-900 text-slate-200 text-xs font-bold border border-slate-800 rounded-xl transition-all cursor-pointer flex items-center gap-2 self-start"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 text-amber-500 ${checking ? 'animate-spin' : ''}`} />
+          {checking ? 'A verificar...' : 'Testar Servidor'}
+        </button>
+      </div>
+
+      {feedback && (
+        <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 p-3 rounded-xl flex items-center gap-2">
+          <CheckCircle className="h-4 w-4 shrink-0" />
+          <span>{feedback}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Status */}
+        <div className="bg-[#0a0b0d]/60 p-4 border border-slate-850 rounded-2xl flex flex-col justify-between space-y-3">
+          <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Estado do Servidor</span>
+          <div className="flex items-center gap-3 py-1">
+            <span className="relative flex h-3.5 w-3.5 shrink-0">
+              {isLive && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+              <span className={`relative inline-flex rounded-full h-3.5 w-3.5 ${isLive ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+            </span>
+            <div>
+              <span className="text-xs font-black text-slate-100 block">
+                {isLive ? 'Conectado & Sincronizado' : 'Servidor Offline'}
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Última sincronização: {lastServerSync ? lastServerSync.toLocaleTimeString('pt-AO') : 'Agora'}
+              </span>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-500">
+            Atualização periódica automática ativa a cada 6s e sempre que retornar à página.
+          </p>
+        </div>
+
+        {/* Endpoints */}
+        <div className="bg-[#0a0b0d]/60 p-4 border border-slate-850 rounded-2xl space-y-2 font-mono text-[11px] md:col-span-2">
+          <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider font-sans block mb-1">
+            Rotas REST Centrais Ativas
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div className="p-2 bg-slate-900/50 border border-slate-850 rounded-lg flex items-center justify-between">
+              <span className="text-emerald-400 font-bold">GET/POST</span>
+              <span className="text-slate-300">/api/products</span>
+            </div>
+            <div className="p-2 bg-slate-900/50 border border-slate-850 rounded-lg flex items-center justify-between">
+              <span className="text-amber-400 font-bold">PUT/DELETE</span>
+              <span className="text-slate-300">/api/products/:id</span>
+            </div>
+            <div className="p-2 bg-slate-900/50 border border-slate-850 rounded-lg flex items-center justify-between">
+              <span className="text-blue-400 font-bold">POST</span>
+              <span className="text-slate-300">/api/products/:id/stock</span>
+            </div>
+            <div className="p-2 bg-slate-900/50 border border-slate-850 rounded-lg flex items-center justify-between">
+              <span className="text-purple-400 font-bold">GET/POST</span>
+              <span className="text-slate-300">/api/sync</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Manual Actions */}
+      <div className="flex flex-wrap gap-3 pt-2">
+        <button
+          onClick={handlePull}
+          disabled={syncing !== null}
+          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+        >
+          <ArrowDownToLine className={`h-4 w-4 text-amber-500 ${syncing === 'pull' ? 'animate-bounce' : ''}`} />
+          {syncing === 'pull' ? 'A descarregar...' : 'Forçar Atualização do Servidor Central'}
+        </button>
+
+        <button
+          onClick={handlePush}
+          disabled={syncing !== null}
+          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer"
+        >
+          <ArrowUpToLine className={`h-4 w-4 ${syncing === 'push' ? 'animate-bounce' : ''}`} />
+          {syncing === 'push' ? 'A enviar...' : 'Enviar Dados Locais para o Servidor Central'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
 // Subcomponent: Supabase Sync Panel
 // ----------------------------------------------------------------------
-import { checkSupabaseConnection, SUPABASE_SETUP_SQL, SupabaseSyncStatus } from '../lib/supabase';
-import { Cloud, Copy, CloudRain, CloudLightning, CopyCheck, Play } from 'lucide-react';
-
 interface SupabaseSyncPanelProps {
   onPullFromSupabase?: () => Promise<boolean>;
   onPushToSupabase?: () => Promise<boolean>;

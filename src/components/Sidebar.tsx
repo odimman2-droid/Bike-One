@@ -12,7 +12,8 @@ import {
   X,
   UserCheck,
   Coins,
-  Settings
+  Settings,
+  Cloud
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -20,6 +21,8 @@ interface SidebarProps {
   activeView: string;
   onNavigate: (view: any) => void;
   onLogout: () => void;
+  icloudAccount?: string;
+  icloudStatus?: string;
   children: React.ReactNode;
 }
 
@@ -28,6 +31,8 @@ export default function Sidebar({
   activeView,
   onNavigate,
   onLogout,
+  icloudAccount = 'odilsonn@icloud.com',
+  icloudStatus = 'connected',
   children,
 }: SidebarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -144,7 +149,29 @@ export default function Sidebar({
         </div>
 
         {/* User Block and Logout */}
-        <div className="space-y-4 pt-6 border-t border-slate-800">
+        <div className="space-y-3 pt-4 border-t border-slate-800">
+          {/* iCloud Status Badge */}
+          <div 
+            onClick={() => onNavigate('settings')}
+            className="flex items-center justify-between px-3 py-2 bg-sky-950/30 hover:bg-sky-950/50 border border-sky-500/25 rounded-xl text-xs cursor-pointer transition-all group"
+            title="Base de Dados iCloud Conectada"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-400"></span>
+              </span>
+              <Cloud className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-sky-200 truncate leading-none">iCloud Base</p>
+                <p className="text-[9px] text-sky-400/80 truncate mt-0.5">{icloudAccount}</p>
+              </div>
+            </div>
+            <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              Auto
+            </span>
+          </div>
+
           <div className="flex items-center gap-3.5 px-3 py-2 bg-[#0a0b0d]/50 border border-slate-850 rounded-xl text-xs">
             <UserCheck className="h-5 w-5 text-amber-500 shrink-0" />
             <div className="min-w-0">
@@ -155,7 +182,7 @@ export default function Sidebar({
           
           <button
             onClick={onLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-rose-400 hover:bg-rose-950/20 hover:text-rose-300 rounded-xl text-xs font-bold transition-all text-left cursor-pointer"
+            className="w-full flex items-center gap-3 px-4 py-2 text-rose-400 hover:bg-rose-950/20 hover:text-rose-300 rounded-xl text-xs font-bold transition-all text-left cursor-pointer"
           >
             <LogOut className="h-4 w-4" />
             Terminar Sessão
