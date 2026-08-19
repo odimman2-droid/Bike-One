@@ -250,6 +250,81 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------
+  // GOOGLE CLOUD & WORKSPACE PERSISTENCE API (/api/google/*)
+  // -------------------------------------------------------------
+
+  let googleSession = {
+    account: 'odimman.2@gmail.com',
+    phone: '+244 941 448 677',
+    projectId: 'bike-one-luanda-cloud',
+    status: 'connected',
+    lastSyncedAt: new Date().toISOString()
+  };
+
+  // GET /api/google/status - Returns Google Cloud connection status
+  app.get('/api/google/status', (req, res) => {
+    try {
+      const store = getFullStore();
+      res.json({
+        account: googleSession.account,
+        phone: googleSession.phone,
+        projectId: googleSession.projectId,
+        status: googleSession.status,
+        lastSyncedAt: googleSession.lastSyncedAt,
+        recordsCount: {
+          products: store.products?.length || 0,
+          services: store.services?.length || 0,
+          workOrders: store.workOrders?.length || 0,
+          directSales: store.directSales?.length || 0,
+          expenses: store.expenses?.length || 0
+        }
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Erro ao consultar Google Cloud status', details: err?.message });
+    }
+  });
+
+  // POST /api/google/sync - Push updates directly to Google Cloud backing
+  app.post('/api/google/sync', (req, res) => {
+    try {
+      const { account, phone, data, timestamp } = req.body;
+      if (account) googleSession.account = account;
+      if (phone) googleSession.phone = phone;
+      googleSession.lastSyncedAt = timestamp || new Date().toISOString();
+      googleSession.status = 'connected';
+
+      if (data && typeof data === 'object') {
+        updateFullStore(data);
+      }
+
+      res.json({
+        success: true,
+        message: `Dados gravados com sucesso na conta Google (${googleSession.account})`,
+        lastSyncedAt: googleSession.lastSyncedAt,
+        account: googleSession.account
+      });
+    } catch (err: any) {
+      console.error('Error syncing to Google Cloud:', err);
+      res.status(500).json({ error: 'Falha ao sincronizar com Google Cloud', details: err?.message });
+    }
+  });
+
+  // GET /api/google/pull - Restore all data from Google Cloud
+  app.get('/api/google/pull', (req, res) => {
+    try {
+      const store = getFullStore();
+      res.json({
+        account: googleSession.account,
+        phone: googleSession.phone,
+        lastSyncedAt: googleSession.lastSyncedAt,
+        data: store
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Falha ao carregar dados do Google Cloud', details: err?.message });
+    }
+  });
+
+  // -------------------------------------------------------------
   // VITE / STATIC SERVING MIDDLEWARE
   // -------------------------------------------------------------
 

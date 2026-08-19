@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, Service, Product, WorkOrder, DirectSale, DirectSaleItem, WorkOrderStatus, Customer, Expense, BalanceAdjustment, SalaryAdvance, Employee } from './types';
 import { 
   DEFAULT_SERVICES, 
@@ -8,8 +8,6 @@ import {
   DEFAULT_EXPENSES
 } from './data';
 
-// Supabase Cloud Sync imports
-import { saveToSupabase, loadAllFromSupabase, saveAllToSupabase, checkSupabaseConnection } from './lib/supabase';
 // Central Backend API imports
 import { 
   apiFetchProducts, 
@@ -21,7 +19,19 @@ import {
   apiPushFullSync, 
   checkServerHealth 
 } from './lib/api';
-// Apple iCloud & CloudKit imports
+
+// Google Cloud Database imports (odimman.2@gmail.com / +244 941 448 677)
+import {
+  getGoogleCloudConfig,
+  saveGoogleCloudConfig,
+  checkGoogleCloudConnection,
+  saveToGoogleCloud,
+  pullFromGoogleCloud,
+  exportGoogleCloudBackupFile,
+  GoogleCloudConfig
+} from './lib/googleCloud';
+
+// Apple iCloud & CloudKit imports (odilsonn@icloud.com)
 import {
   getICloudConfig,
   saveICloudConfig,
@@ -31,7 +41,6 @@ import {
   exportICloudBackupFile,
   ICloudConfig
 } from './lib/icloud';
-
 
 // Component imports
 import Login from './components/Login';
@@ -58,7 +67,7 @@ const STORAGE_KEYS = {
 };
 
 export default function App() {
-  // 1. Initialize State lazily from LocalStorage (Avoiding redundant re-runs)
+  // 1. Initialize State lazily from LocalStorage
   const [user, setUser] = useState<User | null>(() => {
     const stored = localStorage.getItem(STORAGE_KEYS.USER);
     return stored ? JSON.parse(stored) : null;
@@ -72,7 +81,6 @@ export default function App() {
   const [services, setServices] = useState<Service[]>(() => {
     const stored = localStorage.getItem(STORAGE_KEYS.SERVICES);
     if (stored) return JSON.parse(stored);
-    // Initial Seed
     localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(DEFAULT_SERVICES));
     return DEFAULT_SERVICES;
   });
@@ -80,7 +88,6 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>(() => {
     const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     if (stored) return JSON.parse(stored);
-    // Initial Seed
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(DEFAULT_PRODUCTS));
     return DEFAULT_PRODUCTS;
   });
@@ -137,61 +144,70 @@ export default function App() {
     return initialSeed;
   });
 
-  const [activeView, setActiveView] = useState<'dashboard' | 'os' | 'stock' | 'relatorios' | 'clientes' | 'vendas'>('dashboard');
-  const [isLoadedFromSupabase, setIsLoadedFromSupabase] = useState(false);
+  const [activeView, setActiveView] = useState<'dashboard' | 'os' | 'stock' | 'relatorios' | 'clientes' | 'vendas' | 'settings'>('dashboard');
+  const [isInitialized, setIsInitialized] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
   const [lastServerSync, setLastServerSync] = useState<Date>(new Date());
+  
   const [icloudConfig, setICloudConfig] = useState<ICloudConfig>(getICloudConfig);
   const [lastICloudSync, setLastICloudSync] = useState<Date>(new Date());
 
-  // Helper to pull entire central database from backend server (/api/sync and /api/products)
+  const [googleConfig, setGoogleConfig] = useState<GoogleCloudConfig>(getGoogleCloudConfig);
+  const [lastGoogleSync, setLastGoogleSync] = useState<Date>(new Date());
+
+  // Helper to apply incoming full store dataset
+  const applyIncomingData = (data: any) => {
+    if (!data || typeof data !== 'object') return;
+    if (Array.isArray(data.products) && data.products.length > 0) {
+      setProducts(data.products);
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products));
+    }
+    if (Array.isArray(data.services) && data.services.length > 0) {
+      setServices(data.services);
+      localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(data.services));
+    }
+    if (Array.isArray(data.workOrders)) {
+      setWorkOrders(data.workOrders);
+      localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(data.workOrders));
+    }
+    if (Array.isArray(data.directSales)) {
+      setDirectSales(data.directSales);
+      localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify(data.directSales));
+    }
+    if (Array.isArray(data.expenses)) {
+      setExpenses(data.expenses);
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(data.expenses));
+    }
+    if (Array.isArray(data.balanceAdjustments)) {
+      setBalanceAdjustments(data.balanceAdjustments);
+      localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify(data.balanceAdjustments));
+    }
+    if (Array.isArray(data.salaryAdvances)) {
+      setSalaryAdvances(data.salaryAdvances);
+      localStorage.setItem(STORAGE_KEYS.SALARY_ADVANCES, JSON.stringify(data.salaryAdvances));
+    }
+    if (Array.isArray(data.employees) && data.employees.length > 0) {
+      setEmployees(data.employees);
+      localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(data.employees));
+    }
+    if (typeof data.baseBalance === 'number') {
+      setBaseBalance(data.baseBalance);
+      localStorage.setItem('bikeone_base_balance_v1', data.baseBalance.toString());
+    }
+  };
+
+  // Helper to pull entire central database from backend server (/api/sync)
   const handlePullFromServer = async (): Promise<boolean> => {
     try {
       const serverData = await apiGetFullSync();
       if (serverData) {
-        if (Array.isArray(serverData.products) && serverData.products.length > 0) {
-          setProducts(serverData.products);
-          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(serverData.products));
-        }
-        if (Array.isArray(serverData.services) && serverData.services.length > 0) {
-          setServices(serverData.services);
-          localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(serverData.services));
-        }
-        if (Array.isArray(serverData.workOrders)) {
-          setWorkOrders(serverData.workOrders);
-          localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(serverData.workOrders));
-        }
-        if (Array.isArray(serverData.directSales)) {
-          setDirectSales(serverData.directSales);
-          localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify(serverData.directSales));
-        }
-        if (Array.isArray(serverData.expenses)) {
-          setExpenses(serverData.expenses);
-          localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(serverData.expenses));
-        }
-        if (Array.isArray(serverData.balanceAdjustments)) {
-          setBalanceAdjustments(serverData.balanceAdjustments);
-          localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify(serverData.balanceAdjustments));
-        }
-        if (Array.isArray(serverData.salaryAdvances)) {
-          setSalaryAdvances(serverData.salaryAdvances);
-          localStorage.setItem(STORAGE_KEYS.SALARY_ADVANCES, JSON.stringify(serverData.salaryAdvances));
-        }
-        if (Array.isArray(serverData.employees) && serverData.employees.length > 0) {
-          setEmployees(serverData.employees);
-          localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(serverData.employees));
-        }
-        if (typeof serverData.baseBalance === 'number') {
-          setBaseBalance(serverData.baseBalance);
-          localStorage.setItem('bikeone_base_balance_v1', serverData.baseBalance.toString());
-        }
+        applyIncomingData(serverData);
         setServerOnline(true);
         setLastServerSync(new Date());
         return true;
       }
       return false;
     } catch (err) {
-      console.warn('Central server sync pull failed, using local/cached state:', err);
       setServerOnline(false);
       return false;
     }
@@ -214,68 +230,30 @@ export default function App() {
       setLastServerSync(new Date());
       return true;
     } catch (err) {
-      console.warn('Central server push failed:', err);
       setServerOnline(false);
       return false;
     }
   };
 
-  // 1. Initial Load: Try Central Backend first, fallback to Supabase / LocalStorage
-  useEffect(() => {
-    const initAppSync = async () => {
-      // Step A: Check and pull from Central Server (/api/sync & /api/products)
-      const serverSuccess = await handlePullFromServer();
-
-      // Step B: Also check Supabase if available
-      try {
-        const conn = await checkSupabaseConnection();
-        if (conn.status === 'connected') {
-          const data = await loadAllFromSupabase(SYNC_KEYS);
-          const hasData = Object.keys(data).length > 0;
-          if (hasData && !serverSuccess) {
-            if (data['bikeone_base_balance_v1'] !== undefined) setBaseBalance(parseFloat(data['bikeone_base_balance_v1']));
-            if (data[STORAGE_KEYS.SERVICES]) setServices(data[STORAGE_KEYS.SERVICES]);
-            if (data[STORAGE_KEYS.PRODUCTS]) setProducts(data[STORAGE_KEYS.PRODUCTS]);
-            if (data[STORAGE_KEYS.WORK_ORDERS]) setWorkOrders(data[STORAGE_KEYS.WORK_ORDERS]);
-            if (data[STORAGE_KEYS.DIRECT_SALES]) setDirectSales(data[STORAGE_KEYS.DIRECT_SALES]);
-            if (data[STORAGE_KEYS.EXPENSES]) setExpenses(data[STORAGE_KEYS.EXPENSES]);
-            if (data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]) setBalanceAdjustments(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]);
-            if (data[STORAGE_KEYS.SALARY_ADVANCES]) setSalaryAdvances(data[STORAGE_KEYS.SALARY_ADVANCES]);
-            if (data[STORAGE_KEYS.EMPLOYEES]) setEmployees(data[STORAGE_KEYS.EMPLOYEES]);
-          }
-        }
-      } catch (e) {
-        console.warn('Supabase init check skipped:', e);
+  // Google Cloud pull & push
+  const handlePullFromGoogle = async (): Promise<boolean> => {
+    try {
+      const res = await pullFromGoogleCloud();
+      if (res.success && res.data) {
+        applyIncomingData(res.data);
+        setLastGoogleSync(new Date());
+        setGoogleConfig(getGoogleCloudConfig());
+        return true;
       }
+      return false;
+    } catch {
+      return false;
+    }
+  };
 
-      setIsLoadedFromSupabase(true);
-    };
-
-    initAppSync();
-  }, []);
-
-  // 2. Real-time Multi-Device Polling & Focus Sync (every 6 seconds & on window focus)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      handlePullFromServer();
-    }, 6000);
-
-    const onFocus = () => {
-      handlePullFromServer();
-    };
-
-    window.addEventListener('focus', onFocus);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, []);
-
-  // 3. Apple iCloud Automatic Real-Time Persistence (Auto-saves on any data modification)
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-    const timer = setTimeout(() => {
-      saveToICloud({
+  const handlePushToGoogle = async (): Promise<boolean> => {
+    try {
+      const ok = await saveToGoogleCloud({
         products,
         services,
         workOrders,
@@ -285,73 +263,29 @@ export default function App() {
         salaryAdvances,
         employees,
         baseBalance
-      }).then(() => {
-        setLastICloudSync(new Date());
-        setICloudConfig(getICloudConfig());
       });
-    }, 1200);
+      if (ok) {
+        setLastGoogleSync(new Date());
+        setGoogleConfig(getGoogleCloudConfig());
+      }
+      return ok;
+    } catch {
+      return false;
+    }
+  };
 
-    return () => clearTimeout(timer);
-  }, [
-    products,
-    services,
-    workOrders,
-    directSales,
-    expenses,
-    balanceAdjustments,
-    salaryAdvances,
-    employees,
-    baseBalance,
-    isLoadedFromSupabase
-  ]);
-
+  // Apple iCloud pull & push
   const handlePullFromICloud = async (): Promise<boolean> => {
     try {
       const data = await loadAllFromICloud();
       if (data) {
-        if (Array.isArray(data.products) && data.products.length > 0) {
-          setProducts(data.products);
-          localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products));
-        }
-        if (Array.isArray(data.services) && data.services.length > 0) {
-          setServices(data.services);
-          localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(data.services));
-        }
-        if (Array.isArray(data.workOrders)) {
-          setWorkOrders(data.workOrders);
-          localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(data.workOrders));
-        }
-        if (Array.isArray(data.directSales)) {
-          setDirectSales(data.directSales);
-          localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify(data.directSales));
-        }
-        if (Array.isArray(data.expenses)) {
-          setExpenses(data.expenses);
-          localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(data.expenses));
-        }
-        if (Array.isArray(data.balanceAdjustments)) {
-          setBalanceAdjustments(data.balanceAdjustments);
-          localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify(data.balanceAdjustments));
-        }
-        if (Array.isArray(data.salaryAdvances)) {
-          setSalaryAdvances(data.salaryAdvances);
-          localStorage.setItem(STORAGE_KEYS.SALARY_ADVANCES, JSON.stringify(data.salaryAdvances));
-        }
-        if (Array.isArray(data.employees) && data.employees.length > 0) {
-          setEmployees(data.employees);
-          localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(data.employees));
-        }
-        if (typeof data.baseBalance === 'number') {
-          setBaseBalance(data.baseBalance);
-          localStorage.setItem('bikeone_base_balance_v1', data.baseBalance.toString());
-        }
+        applyIncomingData(data);
         setLastICloudSync(new Date());
         setICloudConfig(getICloudConfig());
         return true;
       }
       return false;
-    } catch (err) {
-      console.warn('Falha ao restaurar dados do iCloud:', err);
+    } catch {
       return false;
     }
   };
@@ -369,267 +303,101 @@ export default function App() {
         employees,
         baseBalance
       });
-      setLastICloudSync(new Date());
-      setICloudConfig(getICloudConfig());
+      if (ok) {
+        setLastICloudSync(new Date());
+        setICloudConfig(getICloudConfig());
+      }
       return ok;
-    } catch (err) {
+    } catch {
       return false;
     }
   };
 
-  // Connection list keys to sync
-  const SYNC_KEYS = [
-    'bikeone_base_balance_v1',
-    STORAGE_KEYS.SERVICES,
-    STORAGE_KEYS.PRODUCTS,
-    STORAGE_KEYS.WORK_ORDERS,
-    STORAGE_KEYS.DIRECT_SALES,
-    STORAGE_KEYS.EXPENSES,
-    STORAGE_KEYS.BALANCE_ADJUSTMENTS,
-    STORAGE_KEYS.SALARY_ADVANCES,
-    STORAGE_KEYS.EMPLOYEES,
-  ];
-
-  const handlePullFromSupabase = async (): Promise<boolean> => {
-    try {
-      const conn = await checkSupabaseConnection();
-      if (conn.status !== 'connected') return false;
-
-      const data = await loadAllFromSupabase(SYNC_KEYS);
-      
-      if (data['bikeone_base_balance_v1'] !== undefined && data['bikeone_base_balance_v1'] !== null) {
-        setBaseBalance(parseFloat(data['bikeone_base_balance_v1']));
-        localStorage.setItem('bikeone_base_balance_v1', data['bikeone_base_balance_v1'].toString());
-      }
-      if (data[STORAGE_KEYS.SERVICES] !== undefined && data[STORAGE_KEYS.SERVICES] !== null) {
-        setServices(data[STORAGE_KEYS.SERVICES]);
-        localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(data[STORAGE_KEYS.SERVICES]));
-      }
-      if (data[STORAGE_KEYS.PRODUCTS] !== undefined && data[STORAGE_KEYS.PRODUCTS] !== null) {
-        setProducts(data[STORAGE_KEYS.PRODUCTS]);
-        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data[STORAGE_KEYS.PRODUCTS]));
-      }
-      if (data[STORAGE_KEYS.WORK_ORDERS] !== undefined && data[STORAGE_KEYS.WORK_ORDERS] !== null) {
-        setWorkOrders(data[STORAGE_KEYS.WORK_ORDERS]);
-        localStorage.setItem(STORAGE_KEYS.WORK_ORDERS, JSON.stringify(data[STORAGE_KEYS.WORK_ORDERS]));
-      }
-      if (data[STORAGE_KEYS.DIRECT_SALES] !== undefined && data[STORAGE_KEYS.DIRECT_SALES] !== null) {
-        setDirectSales(data[STORAGE_KEYS.DIRECT_SALES]);
-        localStorage.setItem(STORAGE_KEYS.DIRECT_SALES, JSON.stringify(data[STORAGE_KEYS.DIRECT_SALES]));
-      }
-      if (data[STORAGE_KEYS.EXPENSES] !== undefined && data[STORAGE_KEYS.EXPENSES] !== null) {
-        setExpenses(data[STORAGE_KEYS.EXPENSES]);
-        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(data[STORAGE_KEYS.EXPENSES]));
-      }
-      if (data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== undefined && data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== null) {
-        setBalanceAdjustments(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]);
-        localStorage.setItem(STORAGE_KEYS.BALANCE_ADJUSTMENTS, JSON.stringify(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]));
-      }
-      if (data[STORAGE_KEYS.SALARY_ADVANCES] !== undefined && data[STORAGE_KEYS.SALARY_ADVANCES] !== null) {
-        setSalaryAdvances(data[STORAGE_KEYS.SALARY_ADVANCES]);
-        localStorage.setItem(STORAGE_KEYS.SALARY_ADVANCES, JSON.stringify(data[STORAGE_KEYS.SALARY_ADVANCES]));
-      }
-      if (data[STORAGE_KEYS.EMPLOYEES] !== undefined && data[STORAGE_KEYS.EMPLOYEES] !== null) {
-        setEmployees(data[STORAGE_KEYS.EMPLOYEES]);
-        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(data[STORAGE_KEYS.EMPLOYEES]));
-      }
-
-      return true;
-    } catch (err) {
-      console.error('Error pulling from Supabase:', err);
-      return false;
-    }
-  };
-
-  const handlePushToSupabase = async (): Promise<boolean> => {
-    try {
-      const conn = await checkSupabaseConnection();
-      if (conn.status !== 'connected') return false;
-
-      const payload = {
-        'bikeone_base_balance_v1': baseBalance,
-        [STORAGE_KEYS.SERVICES]: services,
-        [STORAGE_KEYS.PRODUCTS]: products,
-        [STORAGE_KEYS.WORK_ORDERS]: workOrders,
-        [STORAGE_KEYS.DIRECT_SALES]: directSales,
-        [STORAGE_KEYS.EXPENSES]: expenses,
-        [STORAGE_KEYS.BALANCE_ADJUSTMENTS]: balanceAdjustments,
-        [STORAGE_KEYS.SALARY_ADVANCES]: salaryAdvances,
-        [STORAGE_KEYS.EMPLOYEES]: employees,
-      };
-
-      const results = await saveAllToSupabase(payload);
-      return Object.values(results).every(v => v);
-    } catch (err) {
-      console.error('Error pushing to Supabase:', err);
-      return false;
-    }
-  };
-
-  // 1. Load from Supabase on start
+  // 1. Initial Load: pull latest permanent state from Central Backend Server & Cloud on startup
   useEffect(() => {
-    const initSync = async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        const data = await loadAllFromSupabase(SYNC_KEYS);
-        const hasData = Object.keys(data).length > 0;
-        
-        if (hasData) {
-          if (data['bikeone_base_balance_v1'] !== undefined && data['bikeone_base_balance_v1'] !== null) {
-            setBaseBalance(parseFloat(data['bikeone_base_balance_v1']));
-          }
-          if (data[STORAGE_KEYS.SERVICES] !== undefined && data[STORAGE_KEYS.SERVICES] !== null) {
-            setServices(data[STORAGE_KEYS.SERVICES]);
-          }
-          if (data[STORAGE_KEYS.PRODUCTS] !== undefined && data[STORAGE_KEYS.PRODUCTS] !== null) {
-            setProducts(data[STORAGE_KEYS.PRODUCTS]);
-          }
-          if (data[STORAGE_KEYS.WORK_ORDERS] !== undefined && data[STORAGE_KEYS.WORK_ORDERS] !== null) {
-            setWorkOrders(data[STORAGE_KEYS.WORK_ORDERS]);
-          }
-          if (data[STORAGE_KEYS.DIRECT_SALES] !== undefined && data[STORAGE_KEYS.DIRECT_SALES] !== null) {
-            setDirectSales(data[STORAGE_KEYS.DIRECT_SALES]);
-          }
-          if (data[STORAGE_KEYS.EXPENSES] !== undefined && data[STORAGE_KEYS.EXPENSES] !== null) {
-            setExpenses(data[STORAGE_KEYS.EXPENSES]);
-          }
-          if (data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== undefined && data[STORAGE_KEYS.BALANCE_ADJUSTMENTS] !== null) {
-            setBalanceAdjustments(data[STORAGE_KEYS.BALANCE_ADJUSTMENTS]);
-          }
-          if (data[STORAGE_KEYS.SALARY_ADVANCES] !== undefined && data[STORAGE_KEYS.SALARY_ADVANCES] !== null) {
-            setSalaryAdvances(data[STORAGE_KEYS.SALARY_ADVANCES]);
-          }
-          if (data[STORAGE_KEYS.EMPLOYEES] !== undefined && data[STORAGE_KEYS.EMPLOYEES] !== null) {
-            setEmployees(data[STORAGE_KEYS.EMPLOYEES]);
-          }
+    const initAppSync = async () => {
+      const serverSuccess = await handlePullFromServer();
+      if (!serverSuccess) {
+        // Try Google Cloud or iCloud fallback
+        const googleRes = await pullFromGoogleCloud();
+        if (googleRes.success && googleRes.data) {
+          applyIncomingData(googleRes.data);
         } else {
-          await saveAllToSupabase({
-            'bikeone_base_balance_v1': baseBalance,
-            [STORAGE_KEYS.SERVICES]: services,
-            [STORAGE_KEYS.PRODUCTS]: products,
-            [STORAGE_KEYS.WORK_ORDERS]: workOrders,
-            [STORAGE_KEYS.DIRECT_SALES]: directSales,
-            [STORAGE_KEYS.EXPENSES]: expenses,
-            [STORAGE_KEYS.BALANCE_ADJUSTMENTS]: balanceAdjustments,
-            [STORAGE_KEYS.SALARY_ADVANCES]: salaryAdvances,
-            [STORAGE_KEYS.EMPLOYEES]: employees,
-          });
+          const icloudData = await loadAllFromICloud();
+          if (icloudData) {
+            applyIncomingData(icloudData);
+          }
         }
       }
-      setIsLoadedFromSupabase(true);
+      setIsInitialized(true);
     };
 
-    initSync();
+    initAppSync();
   }, []);
 
-  // 2. Real-time changes synchronization
+  // 2. Real-time Multi-Device Polling (every 5 seconds & on window focus)
   useEffect(() => {
-    if (!isLoadedFromSupabase) return;
+    const interval = setInterval(() => {
+      handlePullFromServer();
+    }, 5000);
 
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase('bikeone_base_balance_v1', baseBalance);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [baseBalance, isLoadedFromSupabase]);
+    const onFocus = () => {
+      handlePullFromServer();
+    };
 
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  // 3. Central & Cloud Auto-Save (Syncs to Central Server, Google Cloud, and iCloud whenever any data changes)
   useEffect(() => {
-    if (!isLoadedFromSupabase) return;
+    if (!isInitialized) return;
+    const timer = setTimeout(() => {
+      const fullPayload = {
+        products,
+        services,
+        workOrders,
+        directSales,
+        expenses,
+        balanceAdjustments,
+        salaryAdvances,
+        employees,
+        baseBalance
+      };
 
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.SERVICES, services);
-      }
-    }, 1000);
+      // 1. Central Server DB
+      apiPushFullSync(fullPayload).catch(() => {});
+
+      // 2. Google Cloud (odimman.2@gmail.com / +244 941 448 677)
+      saveToGoogleCloud(fullPayload).then(() => {
+        setLastGoogleSync(new Date());
+        setGoogleConfig(getGoogleCloudConfig());
+      }).catch(() => {});
+
+      // 3. Apple iCloud (odilsonn@icloud.com)
+      saveToICloud(fullPayload).then(() => {
+        setLastICloudSync(new Date());
+        setICloudConfig(getICloudConfig());
+      }).catch(() => {});
+
+    }, 800);
+
     return () => clearTimeout(timer);
-  }, [services, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.PRODUCTS, products);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [products, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.WORK_ORDERS, workOrders);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [workOrders, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.DIRECT_SALES, directSales);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [directSales, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.EXPENSES, expenses);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [expenses, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.BALANCE_ADJUSTMENTS, balanceAdjustments);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [balanceAdjustments, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.SALARY_ADVANCES, salaryAdvances);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [salaryAdvances, isLoadedFromSupabase]);
-
-  useEffect(() => {
-    if (!isLoadedFromSupabase) return;
-
-    const timer = setTimeout(async () => {
-      const conn = await checkSupabaseConnection();
-      if (conn.status === 'connected') {
-        saveToSupabase(STORAGE_KEYS.EMPLOYEES, employees);
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [employees, isLoadedFromSupabase]);
+  }, [
+    products,
+    services,
+    workOrders,
+    directSales,
+    expenses,
+    balanceAdjustments,
+    salaryAdvances,
+    employees,
+    baseBalance,
+    isInitialized
+  ]);
 
   const [woInitialTab, setWoInitialTab] = useState<'list' | 'create'>('list');
   const [isQuickSaleOpen, setIsQuickSaleOpen] = useState(false);
@@ -1068,6 +836,8 @@ export default function App() {
         setActiveView(view);
       }}
       onLogout={handleLogout}
+      googleAccount={googleConfig.accountEmail || 'odimman.2@gmail.com'}
+      googleStatus={googleConfig.status}
       icloudAccount={icloudConfig.accountEmail || 'odilsonn@icloud.com'}
       icloudStatus={icloudConfig.status}
     >
@@ -1132,12 +902,14 @@ export default function App() {
           onUpdateBaseBalance={handleUpdateBaseBalance}
           onResetAllData={handleResetAllData}
           onResetBalanceOnly={handleResetBalanceOnly}
-          onPullFromSupabase={handlePullFromSupabase}
-          onPushToSupabase={handlePushToSupabase}
           serverOnline={serverOnline}
           lastServerSync={lastServerSync}
           onPullFromServer={handlePullFromServer}
           onPushToServer={handlePushToServer}
+          googleConfig={googleConfig}
+          lastGoogleSync={lastGoogleSync}
+          onPullFromGoogle={handlePullFromGoogle}
+          onPushToGoogle={handlePushToGoogle}
           icloudConfig={icloudConfig}
           lastICloudSync={lastICloudSync}
           onPullFromICloud={handlePullFromICloud}
